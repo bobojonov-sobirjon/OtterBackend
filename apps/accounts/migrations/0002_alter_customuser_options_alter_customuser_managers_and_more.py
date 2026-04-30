@@ -91,3 +91,4 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='password_reset_requests', to=settings.AUTH_USER_MODEL, verbose_name='Пользователь'),
         ),
     ]
+

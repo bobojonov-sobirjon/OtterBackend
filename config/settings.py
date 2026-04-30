@@ -47,7 +47,7 @@ if not DEBUG:
 # =============================================================================
 
 LOCAL_APPS = [
-    'accounts.apps.AccountsConfig',
+    'apps.accounts.apps.AccountsConfig',
 ]
 
 THIRD_PARTY_APPS = [
