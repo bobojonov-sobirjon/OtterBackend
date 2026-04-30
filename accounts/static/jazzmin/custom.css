@@ -1,0 +1,94 @@
+/* Make admin inputs consistent and full-width */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Text-like inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"],
+textarea,
+select,
+.form-control,
+.vTextField,
+.vURLField,
+.vLargeTextField,
+.vIntegerField,
+.vFloatField {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Ensure long text is visible/scrollable instead of clipped */
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="search"],
+.form-control,
+.vTextField {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Select2 (Jazzmin uses it in some widgets) */
+.select2-container {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Django admin "aligned" layout constrains field containers */
+.aligned .form-row,
+.aligned .form-row > div,
+.aligned .form-row .fieldBox,
+.aligned .form-row .flex-container,
+.aligned .form-row .flex-container > div,
+.form-row,
+.form-row > div,
+.form-row .fieldBox,
+.fieldBox {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Make label+field layout responsive */
+.aligned .form-row > div {
+  display: grid !important;
+  grid-template-columns: 220px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .aligned .form-row > div {
+    grid-template-columns: 1fr !important;
+  }
+  .aligned .form-row label {
+    margin-bottom: 6px;
+  }
+}
+
+/* Some widgets wrap inputs in "related-widget-wrapper" */
+.related-widget-wrapper,
+.related-widget-wrapper > * {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Inline form rows sometimes constrain width */
+.inline-group .form-row .field-box,
+.inline-group .form-row > div {
+  width: 100% !important;
+}
+
