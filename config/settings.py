@@ -29,7 +29,7 @@ DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # Allowed hosts from environment
 _allowed_hosts = os.getenv('ALLOWED_HOSTS', '*')
-ALLOWED_HOSTS: List[str] = [h.strip() for h in _allowed_hosts.split(',') if h.strip()]
+ALLOWED_HOSTS: ['*']
 
 # Security headers (production uchun)
 if not DEBUG:
