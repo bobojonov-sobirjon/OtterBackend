@@ -277,7 +277,7 @@ SIMPLE_JWT = {
 # CORS SETTINGS
 # =============================================================================
 
-_cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000, http://localhost:8000')
+_cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000, http://localhost:8000, "http://159.194.221.54:8005",')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only in development
@@ -315,6 +315,9 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
+CSRF_TRUSTED_ORIGINS = [
+    "http://159.194.221.54:8005",
+]
 
 # =============================================================================
 # CHANNELS (WebSockets)
