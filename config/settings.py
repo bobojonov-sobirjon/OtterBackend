@@ -27,9 +27,11 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-r*@^j#e62)ua)5znh+w#+p54g)
 
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-# Allowed hosts from environment
-_allowed_hosts = os.getenv('ALLOWED_HOSTS', '*')
-ALLOWED_HOSTS: ['*']
+ALLOWED_HOSTS = [
+    "159.194.221.54",
+    "localhost",
+    "127.0.0.1",
+]
 
 # Security headers (production uchun)
 if not DEBUG:
