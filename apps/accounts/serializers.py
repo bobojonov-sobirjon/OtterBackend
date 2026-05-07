@@ -15,6 +15,14 @@ class RegistrationSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=False, allow_blank=True, label="Имя")
     last_name = serializers.CharField(required=False, allow_blank=True, label="Фамилия")
 
+    def validate_email(self, value: str) -> str:
+        normalized = value.strip().lower()
+        if CustomUser.objects.filter(email__iexact=normalized).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует")
+        if CustomUser.objects.filter(username__iexact=normalized).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует")
+        return normalized
+
     def validate(self, attrs):
         password = attrs.get("password")
         password_validation.validate_password(password)

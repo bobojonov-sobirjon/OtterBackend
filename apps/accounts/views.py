@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.db import IntegrityError
 from django.template.loader import render_to_string
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -64,7 +65,13 @@ class РегистрацияAPIView(APIView):
     def post(self, request):
         serializer = RegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        try:
+            user = serializer.save()
+        except IntegrityError:
+            return Response(
+                {"email": ["Пользователь с таким email уже существует"]},
+                status=400,
+            )
         tokens = _jwt_tokens_for_user(user)
         return Response({"user": ProfileSerializer(user).data, "tokens": tokens}, status=201)
 
