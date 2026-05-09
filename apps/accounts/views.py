@@ -176,7 +176,7 @@ class ChangePasswordAPIView(APIView):
     parser_classes = [JSONParser]
 
     @extend_schema(
-        tags=["Авторизация"],
+        tags=["Профиль"],
         summary="Сменить пароль (только new_password)",
         description=(
             "Требуется Bearer access. Принимает только `new_password` и устанавливает его "
