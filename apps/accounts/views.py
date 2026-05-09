@@ -130,12 +130,17 @@ class GoogleLoginAPIView(APIView):
                 {"detail": "Invalid Firebase ID token."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-        except Exception:
+        except Exception as e:
             # Any other verification/initialization errors shouldn't be 500 without context to client
-            return Response(
-                {"detail": "Failed to verify Firebase token."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            if getattr(settings, "DEBUG", False):
+                return Response(
+                    {
+                        "detail": "Failed to verify Firebase token.",
+                        "error": f"{type(e).__name__}: {e}",
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            return Response({"detail": "Failed to verify Firebase token."}, status=status.HTTP_401_UNAUTHORIZED)
         email = decoded.get("email")
         if not email:
             return Response({"detail": "В токене отсутствует email"}, status=400)
