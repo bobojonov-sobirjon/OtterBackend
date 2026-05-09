@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
+from firebase_admin import auth as firebase_auth
 
 from .models import PasswordResetRequest
 from .serializers import (
@@ -112,7 +113,29 @@ class GoogleLoginAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         id_token = serializer.validated_data["firebase_token"]
 
-        decoded = verify_firebase_id_token(id_token)
+        try:
+            decoded = verify_firebase_id_token(id_token)
+        except firebase_auth.ExpiredIdTokenError:
+            return Response(
+                {"detail": "Firebase token expired. Please re-authenticate and send a fresh ID token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except firebase_auth.RevokedIdTokenError:
+            return Response(
+                {"detail": "Firebase token revoked. Please re-authenticate."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except firebase_auth.InvalidIdTokenError:
+            return Response(
+                {"detail": "Invalid Firebase ID token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except Exception:
+            # Any other verification/initialization errors shouldn't be 500 without context to client
+            return Response(
+                {"detail": "Failed to verify Firebase token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         email = decoded.get("email")
         if not email:
             return Response({"detail": "В токене отсутствует email"}, status=400)
