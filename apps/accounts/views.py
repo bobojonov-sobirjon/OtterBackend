@@ -159,7 +159,12 @@ class ПрофильAPIView(APIView):
         responses={200: ProfileSerializer},
     )
     def patch(self, request):
-        serializer = ProfileSerializer(instance=request.user, data=request.data, partial=True)
+        serializer = ProfileSerializer(
+            instance=request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=200)
