@@ -19,12 +19,13 @@ urlpatterns = [
     path("auth/login/", ВходAPIView.as_view(), name="login"),
     path("auth/google/", GoogleLoginAPIView.as_view(), name="google-login"),
     path("auth/token/refresh/", TokenRefreshAPIView.as_view(), name="token-refresh"),
-    path("auth/change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
     # Forgot password
     path("auth/forgot-password/", ЗабылиПарольЗапросAPIView.as_view(), name="forgot-password"),
     path("auth/forgot-password/verify/", ЗабылиПарольПроверкаКодаAPIView.as_view(), name="forgot-password-verify"),
     path("auth/forgot-password/confirm/", ЗабылиПарольНовыйПарольAPIView.as_view(), name="forgot-password-confirm"),
     # Profile
     path("profile/", ПрофильAPIView.as_view(), name="profile"),
+    path("profile/change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
+    
 ]
 
