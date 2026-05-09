@@ -145,10 +145,41 @@ class GoogleLoginAPIView(APIView):
         if not email:
             return Response({"detail": "В токене отсутствует email"}, status=400)
 
-        user, created = User.objects.get_or_create(email=email, defaults={"username": email})
+        # Try to extract first/last name from Firebase claims.
+        first_name = (decoded.get("given_name") or "").strip()
+        last_name = (decoded.get("family_name") or "").strip()
+        if not first_name and not last_name:
+            full_name = (decoded.get("name") or "").strip()
+            if full_name:
+                parts = full_name.split()
+                if len(parts) == 1:
+                    first_name = parts[0]
+                else:
+                    first_name = parts[0]
+                    last_name = " ".join(parts[1:])
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "username": email,
+                "first_name": first_name or None,
+                "last_name": last_name or None,
+            },
+        )
         if created:
             user.set_unusable_password()
             user.save(update_fields=["password"])
+        else:
+            # If user exists but names are empty, fill them from Google.
+            update_fields: list[str] = []
+            if first_name and not (getattr(user, "first_name", "") or "").strip():
+                user.first_name = first_name
+                update_fields.append("first_name")
+            if last_name and not (getattr(user, "last_name", "") or "").strip():
+                user.last_name = last_name
+                update_fields.append("last_name")
+            if update_fields:
+                user.save(update_fields=update_fields)
 
         tokens = _jwt_tokens_for_user(user)
         return Response({"tokens": tokens, "user": ProfileSerializer(user).data}, status=200)
