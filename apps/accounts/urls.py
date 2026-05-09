@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ChangePasswordAPIView,
     GoogleLoginAPIView,
     TokenRefreshAPIView,
     ВходAPIView,
@@ -18,6 +19,7 @@ urlpatterns = [
     path("auth/login/", ВходAPIView.as_view(), name="login"),
     path("auth/google/", GoogleLoginAPIView.as_view(), name="google-login"),
     path("auth/token/refresh/", TokenRefreshAPIView.as_view(), name="token-refresh"),
+    path("auth/change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
     # Forgot password
     path("auth/forgot-password/", ЗабылиПарольЗапросAPIView.as_view(), name="forgot-password"),
     path("auth/forgot-password/verify/", ЗабылиПарольПроверкаКодаAPIView.as_view(), name="forgot-password-verify"),

@@ -17,6 +17,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .models import PasswordResetRequest
 from .serializers import (
+    ChangePasswordSerializer,
     GoogleLoginSerializer,
     ForgotPasswordConfirmSerializer,
     ForgotPasswordRequestSerializer,
@@ -168,6 +169,31 @@ class ПрофильAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=200)
+
+
+class ChangePasswordAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    @extend_schema(
+        tags=["Авторизация"],
+        summary="Сменить пароль (только new_password)",
+        description=(
+            "Требуется Bearer access. Принимает только `new_password` и устанавливает его "
+            "текущему пользователю без проверки старого пароля."
+        ),
+        request=ChangePasswordSerializer,
+        responses={200: OpenApiResponse(description="Пароль обновлён")},
+    )
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"user": request.user},
+        )
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        return Response({"detail": "Пароль обновлён"}, status=200)
 
 
 class ЗабылиПарольЗапросAPIView(APIView):
