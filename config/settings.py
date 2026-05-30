@@ -51,6 +51,7 @@ if not DEBUG:
 
 LOCAL_APPS = [
     'apps.accounts.apps.AccountsConfig',
+    'apps.planner.apps.PlannerConfig',
 ]
 
 THIRD_PARTY_APPS = [

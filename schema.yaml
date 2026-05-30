@@ -7,8 +7,9 @@ paths:
   /api/v1/auth/forgot-password/:
     post:
       operationId: auth_forgot_password_create
-      description: Отправляет 6-значный код на email. Если пользователь не найден
-        — ответ всё равно 200 (без раскрытия).
+      description: Отправляет 6-значный код на email для восстановления пароля. Если
+        email не зарегистрирован, всё равно возвращает 200 для защиты от перебора
+        пользователей.
       summary: Запросить код для сброса пароля
       tags:
       - Восстановление пароля
@@ -23,12 +24,13 @@ paths:
       - {}
       responses:
         '200':
-          description: Код отправлен
+          description: Запрос принят. Если email существует, код отправлен.
   /api/v1/auth/forgot-password/confirm/:
     post:
       operationId: auth_forgot_password_confirm_create
-      description: Устанавливает новый пароль по `reset_token`.
-      summary: Установить новый пароль по токену
+      description: 'Финальный шаг восстановления: принимает `reset_token` и `new_password`,
+        после чего устанавливает новый пароль.'
+      summary: Установка нового пароля
       tags:
       - Восстановление пароля
       requestBody:
@@ -42,13 +44,15 @@ paths:
       - {}
       responses:
         '200':
-          description: Пароль обновлён
+          description: Пароль успешно обновлён.
+        '400':
+          description: Токен недействителен, использован или истёк.
   /api/v1/auth/forgot-password/verify/:
     post:
       operationId: auth_forgot_password_verify_create
-      description: Проверяет код. В ответ отдаёт `reset_token`, который нужно использовать
-        для установки нового пароля.
-      summary: Проверить код и получить токен сброса
+      description: Проверяет `email` и одноразовый код. Если код корректен и не истёк
+        — возвращает `reset_token` для финального шага смены пароля.
+      summary: Проверка кода восстановления
       tags:
       - Восстановление пароля
       requestBody:
@@ -62,15 +66,16 @@ paths:
       - {}
       responses:
         '200':
-          description: Токен сброса выдан
+          description: Код подтверждён, токен сброса выдан.
         '400':
-          description: Неверный код или истёк срок
+          description: Код неверный, уже использован или истёк.
   /api/v1/auth/google/:
     post:
       operationId: auth_google_create
-      description: Принимает Firebase ID Token, проверяет его через Firebase Admin
-        SDK, создаёт/находит пользователя и возвращает JWT токены.
-      summary: Вход через Google (Firebase ID Token)
+      description: Принимает `firebase_token` (Google/Firebase ID Token), валидирует
+        его через Firebase Admin SDK, находит или создаёт пользователя и возвращает
+        JWT-токены.
+      summary: Вход через Google
       tags:
       - Авторизация
       requestBody:
@@ -84,11 +89,14 @@ paths:
       - {}
       responses:
         '200':
-          description: Токены выданы
+          description: Пользователь успешно авторизован через Google.
+        '401':
+          description: Firebase-токен недействителен, отозван или просрочен.
   /api/v1/auth/login/:
     post:
       operationId: auth_login_create
-      description: Возвращает JWT access/refresh токены.
+      description: 'Проверяет email/пароль и возвращает пару JWT-токенов: `access`
+        и `refresh`.'
       summary: Вход по email и паролю
       tags:
       - Авторизация
@@ -103,11 +111,14 @@ paths:
       - {}
       responses:
         '200':
-          description: Токены выданы
+          description: Авторизация успешна, токены выданы.
+        '400':
+          description: Неверные учетные данные или ошибка валидации.
   /api/v1/auth/register/:
     post:
       operationId: auth_register_create
-      description: Создаёт нового пользователя по email и паролю.
+      description: Создаёт новую учетную запись по email и паролю, после чего сразу
+        возвращает JWT-токены для авторизации.
       summary: Регистрация пользователя
       tags:
       - Авторизация
@@ -122,13 +133,15 @@ paths:
       - {}
       responses:
         '201':
-          description: Пользователь создан
+          description: Пользователь успешно создан.
+        '400':
+          description: Ошибка валидации (например, email уже занят).
   /api/v1/auth/token/refresh/:
     post:
       operationId: auth_token_refresh_create
-      description: Принимает refresh токен и возвращает новый access токен (и refresh,
-        если включена ротация).
-      summary: Обновить access токен
+      description: Принимает `refresh` токен и возвращает новый `access` токен. Если
+        включена ротация refresh-токенов, в ответе также будет новый `refresh`.
+      summary: Обновление access-токена
       tags:
       - Авторизация
       requestBody:
@@ -145,12 +158,220 @@ paths:
         required: true
       responses:
         '200':
-          description: Access токен обновлён
+          description: Токен успешно обновлён.
+        '401':
+          description: Передан недействительный или просроченный refresh-токен.
+  /api/v1/calendar/:
+    get:
+      operationId: calendar_retrieve
+      description: 'Возвращает задачи в диапазоне выбранного вида календаря: `day`,
+        `week`, `month`, `year`.'
+      summary: Задачи для календарного представления
+      parameters:
+      - in: query
+        name: date
+        schema:
+          type: string
+        description: Опорная дата в формате YYYY-MM-DD.
+        required: true
+      - in: query
+        name: view
+        schema:
+          type: string
+        description: 'Режим календаря: day | week | month | year.'
+        required: true
+      tags:
+      - Календарь
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Диапазон и задачи для календаря успешно получены.
+        '400':
+          description: Некорректные параметры `view` или `date`.
+  /api/v1/help/:
+    get:
+      operationId: help_retrieve
+      description: Возвращает базовый список часто задаваемых вопросов и ответов.
+      summary: Получить FAQ
+      tags:
+      - Центр помощи
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: help_create
+      description: Создаёт обращение в поддержку с текстом и опциональным скриншотом.
+      summary: Отправить сообщение в поддержку
+      tags:
+      - Центр помощи
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/legal/documents/:
+    get:
+      operationId: legal_documents_retrieve
+      description: 'Возвращает тексты документов: оферта, политика конфиденциальности,
+        политика возвратов и согласие на обработку персональных данных.'
+      summary: Список юридических документов
+      tags:
+      - Юридические документы
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/matrix/:
+    get:
+      operationId: matrix_retrieve
+      description: Возвращает 4 блока матрицы Эйзенхауэра и задачи, распределённые
+        по этим блокам.
+      summary: Получить блоки матрицы с задачами
+      tags:
+      - Матрица Эйзенхауэра
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/matrix/settings/:
+    get:
+      operationId: matrix_settings_retrieve
+      description: Возвращает пользовательские настройки всех четырёх блоков матрицы.
+      summary: Получить настройки блоков матрицы
+      tags:
+      - Матрица Эйзенхауэра
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: matrix_settings_partial_update
+      description: Обновляет один блок матрицы по полю `block`. Можно изменить название,
+        приоритеты и фильтр по дате.
+      summary: Обновить настройки блока матрицы
+      tags:
+      - Матрица Эйзенхауэра
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/pomodoro/sessions/:
+    get:
+      operationId: pomodoro_sessions_retrieve
+      description: Возвращает историю созданных сессий помодоро для текущего пользователя.
+      summary: Список сессий помодоро
+      tags:
+      - Помодоро
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: pomodoro_sessions_create
+      description: Создаёт новую сессию помодоро с выбранной задачей и длительностью.
+      summary: Создать сессию помодоро
+      tags:
+      - Помодоро
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/pomodoro/sessions/{session_id}/state/:
+    post:
+      operationId: pomodoro_sessions_state_create
+      description: 'Переводит сессию в одно из состояний: `running`, `paused`, `stopped`,
+        `completed`.'
+      summary: Изменить состояние сессии
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Помодоро
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/pomodoro/settings/:
+    get:
+      operationId: pomodoro_settings_retrieve
+      description: 'Возвращает параметры таймера: длительность, звук и режим экрана
+        блокировки.'
+      summary: Получить настройки помодоро
+      tags:
+      - Помодоро
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: pomodoro_settings_partial_update
+      description: Обновляет пользовательские параметры таймера помодоро.
+      summary: Обновить настройки помодоро
+      tags:
+      - Помодоро
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/premium/activate/:
+    post:
+      operationId: premium_activate_create
+      description: Активирует премиум-статус пользователя после успешного подтверждения
+        оплаты.
+      summary: Активировать премиум
+      tags:
+      - Премиум
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/premium/checkout/:
+    post:
+      operationId: premium_checkout_create
+      description: Формирует URL для перехода в платёжный шлюз Robokassa.
+      summary: Создать ссылку на оплату премиум
+      tags:
+      - Премиум
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/premium/features/:
+    get:
+      operationId: premium_features_retrieve
+      description: Возвращает включенные feature-flag'и для гибкого управления платным
+        функционалом.
+      summary: Список флагов премиум-функций
+      tags:
+      - Премиум
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/v1/profile/:
     get:
       operationId: profile_retrieve
       description: Возвращает данные текущего пользователя.
-      summary: Получить профиль
+      summary: Получение профиля текущего пользователя
       tags:
       - Профиль
       security:
@@ -164,8 +385,9 @@ paths:
           description: ''
     put:
       operationId: profile_update
-      description: Обновляет имя/фамилию/аватар. Для аватара используйте multipart/form-data.
-      summary: Обновить профиль (multipart/form-data)
+      description: Полностью обновляет профиль пользователя (`first_name`, `last_name`,
+        `avatar`). Для загрузки аватара используйте `multipart/form-data`.
+      summary: Полное обновление профиля
       tags:
       - Профиль
       requestBody:
@@ -190,8 +412,9 @@ paths:
           description: ''
     patch:
       operationId: profile_partial_update
-      description: Частичное обновление профиля. Для аватара используйте multipart/form-data.
-      summary: Частично обновить профиль (multipart/form-data)
+      description: Частично обновляет поля профиля. Для обновления `avatar` используйте
+        `multipart/form-data`.
+      summary: Частичное обновление профиля
       tags:
       - Профиль
       requestBody:
@@ -214,8 +437,331 @@ paths:
               schema:
                 $ref: '#/components/schemas/Profile'
           description: ''
+  /api/v1/profile/change-password/:
+    post:
+      operationId: profile_change_password_create
+      description: Требуется Bearer access-токен. Принимает поле `new_password` и
+        устанавливает новый пароль текущему пользователю.
+      summary: Смена пароля в профиле
+      tags:
+      - Профиль
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Пароль успешно обновлён.
+        '400':
+          description: Новый пароль не прошёл проверку валидаторами.
+  /api/v1/settings/:
+    get:
+      operationId: settings_retrieve
+      description: Возвращает текущие пользовательские настройки интерфейса и уведомлений.
+      summary: Получить настройки приложения
+      tags:
+      - Настройки приложения
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: settings_partial_update
+      description: Частично обновляет настройки пользователя (звук, вкладки, язык
+        и т.д.).
+      summary: Обновить настройки приложения
+      tags:
+      - Настройки приложения
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/settings/stub-action/:
+    post:
+      operationId: settings_stub_action_create
+      description: Единый эндпоинт для пунктов меню, которые ещё находятся в разработке.
+      summary: Заглушка для пунктов в разработке
+      tags:
+      - Настройки приложения
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/tasks/:
+    get:
+      operationId: tasks_list
+      description: Возвращает список задач текущего пользователя. Поддерживаются фильтры
+        `search`, `is_completed`, `matrix_block`.
+      summary: Список задач
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - Задачи
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTaskList'
+          description: ''
+    post:
+      operationId: tasks_create
+      description: Создаёт новую задачу. Если не передан `due_at`, задача попадёт
+        в группу `Без срока`. Поддерживается загрузка изображения задачи.
+      summary: Создание задачи
+      tags:
+      - Задачи
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+  /api/v1/tasks/{id}/:
+    get:
+      operationId: tasks_retrieve
+      description: Возвращает полную информацию по одной задаче пользователя.
+      summary: Детальная информация по задаче
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+    put:
+      operationId: tasks_update
+      description: Полностью заменяет данные существующей задачи.
+      summary: Полное обновление задачи
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+    patch:
+      operationId: tasks_partial_update
+      description: Обновляет только переданные поля задачи.
+      summary: Частичное обновление задачи
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTaskRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+    delete:
+      operationId: tasks_destroy
+      description: Удаляет задачу пользователя (аналог свайпа влево в мобильном приложении).
+      summary: Удаление задачи
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/tasks/{id}/complete/:
+    post:
+      operationId: tasks_complete_create
+      description: Устанавливает статус выполнения задачи (аналог свайпа вправо).
+      summary: Отметить задачу выполненной
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+  /api/v1/tasks/{id}/uncomplete/:
+    post:
+      operationId: tasks_uncomplete_create
+      description: Переводит задачу обратно в активное состояние.
+      summary: Снять отметку выполнения
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - Задачи
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          description: ''
+  /api/v1/tasks/grouped/:
+    get:
+      operationId: tasks_grouped_retrieve
+      description: Возвращает задачи в группах `Просрочено`, `Сегодня`, `Завтра`,
+        `Позже`, `Без срока`, `Выполнено` с количеством задач в каждой группе.
+      summary: Группировка задач по системным спискам
+      tags:
+      - Задачи
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Группы задач успешно сформированы.
 components:
   schemas:
+    ChangePasswordRequest:
+      type: object
+      description: 'Смена пароля по JWT: только новый пароль, без проверки старого.'
+      properties:
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 8
+          title: Новый пароль
+      required:
+      - new_password
     ForgotPasswordConfirmRequest:
       type: object
       properties:
@@ -281,6 +827,41 @@ components:
       required:
       - email
       - password
+    MatrixBlockEnum:
+      enum:
+      - urgent_important
+      - not_urgent_important
+      - urgent_not_important
+      - not_urgent_not_important
+      type: string
+      description: |-
+        * `urgent_important` - Срочно и важно
+        * `not_urgent_important` - Не срочно и важно
+        * `urgent_not_important` - Срочно и не важно
+        * `not_urgent_not_important` - Не срочно и не важно
+    PaginatedTaskList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
     PatchedProfileRequest:
       type: object
       properties:
@@ -295,6 +876,75 @@ components:
           format: binary
           nullable: true
           title: Аватар
+    PatchedTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          title: Название
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          title: Описание
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Срок выполнения
+        start_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Начало
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Окончание
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Напоминание
+        repeat_unit:
+          allOf:
+          - $ref: '#/components/schemas/RepeatUnitEnum'
+          title: Единица повтора
+        repeat_interval:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          title: Интервал повтора
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/PriorityEnum'
+          title: Приоритет
+        matrix_block:
+          allOf:
+          - $ref: '#/components/schemas/MatrixBlockEnum'
+          title: Блок матрицы Эйзенхауэра
+        image:
+          type: string
+          format: binary
+          nullable: true
+          title: Изображение
+        is_completed:
+          type: boolean
+          title: Выполнено
+    PriorityEnum:
+      enum:
+      - low
+      - medium
+      - high
+      - critical
+      type: string
+      description: |-
+        * `low` - Низкий
+        * `medium` - Средний
+        * `high` - Высокий
+        * `critical` - Критичный
     Profile:
       type: object
       properties:
@@ -356,6 +1006,160 @@ components:
       required:
       - email
       - password
+    RepeatUnitEnum:
+      enum:
+      - none
+      - day
+      - week
+      - month
+      - year
+      type: string
+      description: |-
+        * `none` - Без повтора
+        * `day` - День
+        * `week` - Неделя
+        * `month` - Месяц
+        * `year` - Год
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          title: Название
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          title: Описание
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Срок выполнения
+        start_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Начало
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Окончание
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Напоминание
+        repeat_unit:
+          allOf:
+          - $ref: '#/components/schemas/RepeatUnitEnum'
+          title: Единица повтора
+        repeat_interval:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          title: Интервал повтора
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/PriorityEnum'
+          title: Приоритет
+        matrix_block:
+          allOf:
+          - $ref: '#/components/schemas/MatrixBlockEnum'
+          title: Блок матрицы Эйзенхауэра
+        image:
+          type: string
+          format: uri
+          nullable: true
+          title: Изображение
+        is_completed:
+          type: boolean
+          title: Выполнено
+        completed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          title: Выполнено в
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Создано
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Обновлено
+      required:
+      - completed_at
+      - created_at
+      - id
+      - title
+      - updated_at
+    TaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          title: Название
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+          title: Описание
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Срок выполнения
+        start_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Начало
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Окончание
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Напоминание
+        repeat_unit:
+          allOf:
+          - $ref: '#/components/schemas/RepeatUnitEnum'
+          title: Единица повтора
+        repeat_interval:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          title: Интервал повтора
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/PriorityEnum'
+          title: Приоритет
+        matrix_block:
+          allOf:
+          - $ref: '#/components/schemas/MatrixBlockEnum'
+          title: Блок матрицы Эйзенхауэра
+        image:
+          type: string
+          format: binary
+          nullable: true
+          title: Изображение
+        is_completed:
+          type: boolean
+          title: Выполнено
+      required:
+      - title
     TokenRefreshRequest:
       type: object
       properties:

@@ -45,9 +45,15 @@ def _jwt_tokens_for_user(user) -> dict:
 class TokenRefreshAPIView(TokenRefreshView):
     @extend_schema(
         tags=["Авторизация"],
-        summary="Обновить access токен",
-        description="Принимает refresh токен и возвращает новый access токен (и refresh, если включена ротация).",
-        responses={200: OpenApiResponse(description="Access токен обновлён")},
+        summary="Обновление access-токена",
+        description=(
+            "Принимает `refresh` токен и возвращает новый `access` токен. "
+            "Если включена ротация refresh-токенов, в ответе также будет новый `refresh`."
+        ),
+        responses={
+            200: OpenApiResponse(description="Токен успешно обновлён."),
+            401: OpenApiResponse(description="Передан недействительный или просроченный refresh-токен."),
+        },
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -60,9 +66,15 @@ class РегистрацияAPIView(APIView):
     @extend_schema(
         tags=["Авторизация"],
         summary="Регистрация пользователя",
-        description="Создаёт нового пользователя по email и паролю.",
+        description=(
+            "Создаёт новую учетную запись по email и паролю, "
+            "после чего сразу возвращает JWT-токены для авторизации."
+        ),
         request=RegistrationSerializer,
-        responses={201: OpenApiResponse(description="Пользователь создан")},
+        responses={
+            201: OpenApiResponse(description="Пользователь успешно создан."),
+            400: OpenApiResponse(description="Ошибка валидации (например, email уже занят)."),
+        },
     )
     def post(self, request):
         serializer = RegistrationSerializer(data=request.data)
@@ -85,9 +97,12 @@ class ВходAPIView(APIView):
     @extend_schema(
         tags=["Авторизация"],
         summary="Вход по email и паролю",
-        description="Возвращает JWT access/refresh токены.",
+        description="Проверяет email/пароль и возвращает пару JWT-токенов: `access` и `refresh`.",
         request=LoginSerializer,
-        responses={200: OpenApiResponse(description="Токены выданы")},
+        responses={
+            200: OpenApiResponse(description="Авторизация успешна, токены выданы."),
+            400: OpenApiResponse(description="Неверные учетные данные или ошибка валидации."),
+        },
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -103,10 +118,17 @@ class GoogleLoginAPIView(APIView):
 
     @extend_schema(
         tags=["Авторизация"],
-        summary="Вход через Google (Firebase ID Token)",
-        description="Принимает Firebase ID Token, проверяет его через Firebase Admin SDK, создаёт/находит пользователя и возвращает JWT токены.",
+        summary="Вход через Google",
+        description=(
+            "Принимает `firebase_token` (Google/Firebase ID Token), "
+            "валидирует его через Firebase Admin SDK, находит или создаёт пользователя "
+            "и возвращает JWT-токены."
+        ),
         request=GoogleLoginSerializer,
-        responses={200: OpenApiResponse(description="Токены выданы")},
+        responses={
+            200: OpenApiResponse(description="Пользователь успешно авторизован через Google."),
+            401: OpenApiResponse(description="Firebase-токен недействителен, отозван или просрочен."),
+        },
     )
     def post(self, request):
         serializer = GoogleLoginSerializer(data=request.data)
@@ -191,7 +213,7 @@ class ПрофильAPIView(APIView):
 
     @extend_schema(
         tags=["Профиль"],
-        summary="Получить профиль",
+        summary="Получение профиля текущего пользователя",
         description="Возвращает данные текущего пользователя.",
         responses={200: ProfileSerializer},
     )
@@ -200,8 +222,11 @@ class ПрофильAPIView(APIView):
 
     @extend_schema(
         tags=["Профиль"],
-        summary="Обновить профиль (multipart/form-data)",
-        description="Обновляет имя/фамилию/аватар. Для аватара используйте multipart/form-data.",
+        summary="Полное обновление профиля",
+        description=(
+            "Полностью обновляет профиль пользователя (`first_name`, `last_name`, `avatar`). "
+            "Для загрузки аватара используйте `multipart/form-data`."
+        ),
         request=ProfileSerializer,
         responses={200: ProfileSerializer},
     )
@@ -213,8 +238,11 @@ class ПрофильAPIView(APIView):
 
     @extend_schema(
         tags=["Профиль"],
-        summary="Частично обновить профиль (multipart/form-data)",
-        description="Частичное обновление профиля. Для аватара используйте multipart/form-data.",
+        summary="Частичное обновление профиля",
+        description=(
+            "Частично обновляет поля профиля. "
+            "Для обновления `avatar` используйте `multipart/form-data`."
+        ),
         request=ProfileSerializer,
         responses={200: ProfileSerializer},
     )
@@ -236,13 +264,16 @@ class ChangePasswordAPIView(APIView):
 
     @extend_schema(
         tags=["Профиль"],
-        summary="Сменить пароль (только new_password)",
+        summary="Смена пароля в профиле",
         description=(
-            "Требуется Bearer access. Принимает только `new_password` и устанавливает его "
-            "текущему пользователю без проверки старого пароля."
+            "Требуется Bearer access-токен. "
+            "Принимает поле `new_password` и устанавливает новый пароль текущему пользователю."
         ),
         request=ChangePasswordSerializer,
-        responses={200: OpenApiResponse(description="Пароль обновлён")},
+        responses={
+            200: OpenApiResponse(description="Пароль успешно обновлён."),
+            400: OpenApiResponse(description="Новый пароль не прошёл проверку валидаторами."),
+        },
     )
     def post(self, request):
         serializer = ChangePasswordSerializer(
@@ -262,9 +293,13 @@ class ЗабылиПарольЗапросAPIView(APIView):
     @extend_schema(
         tags=["Восстановление пароля"],
         summary="Запросить код для сброса пароля",
-        description="Отправляет 6-значный код на email. Если пользователь не найден — ответ всё равно 200 (без раскрытия).",
+        description=(
+            "Отправляет 6-значный код на email для восстановления пароля. "
+            "Если email не зарегистрирован, всё равно возвращает 200 "
+            "для защиты от перебора пользователей."
+        ),
         request=ForgotPasswordRequestSerializer,
-        responses={200: OpenApiResponse(description="Код отправлен")},
+        responses={200: OpenApiResponse(description="Запрос принят. Если email существует, код отправлен.")},
     )
     def post(self, request):
         serializer = ForgotPasswordRequestSerializer(data=request.data)
@@ -307,12 +342,16 @@ class ЗабылиПарольПроверкаКодаAPIView(APIView):
 
     @extend_schema(
         tags=["Восстановление пароля"],
-        summary="Проверить код и получить токен сброса",
-        description="Проверяет код. В ответ отдаёт `reset_token`, который нужно использовать для установки нового пароля.",
+        summary="Проверка кода восстановления",
+        description=(
+            "Проверяет `email` и одноразовый код. "
+            "Если код корректен и не истёк — возвращает `reset_token` "
+            "для финального шага смены пароля."
+        ),
         request=ForgotPasswordVerifyCodeSerializer,
         responses={
-            200: OpenApiResponse(description="Токен сброса выдан"),
-            400: OpenApiResponse(description="Неверный код или истёк срок"),
+            200: OpenApiResponse(description="Код подтверждён, токен сброса выдан."),
+            400: OpenApiResponse(description="Код неверный, уже использован или истёк."),
         },
     )
     def post(self, request):
@@ -341,10 +380,16 @@ class ЗабылиПарольНовыйПарольAPIView(APIView):
 
     @extend_schema(
         tags=["Восстановление пароля"],
-        summary="Установить новый пароль по токену",
-        description="Устанавливает новый пароль по `reset_token`.",
+        summary="Установка нового пароля",
+        description=(
+            "Финальный шаг восстановления: принимает `reset_token` и `new_password`, "
+            "после чего устанавливает новый пароль."
+        ),
         request=ForgotPasswordConfirmSerializer,
-        responses={200: OpenApiResponse(description="Пароль обновлён")},
+        responses={
+            200: OpenApiResponse(description="Пароль успешно обновлён."),
+            400: OpenApiResponse(description="Токен недействителен, использован или истёк."),
+        },
     )
     def post(self, request):
         serializer = ForgotPasswordConfirmSerializer(data=request.data)

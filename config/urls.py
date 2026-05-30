@@ -20,6 +20,7 @@ from config.spectacular.schema_views import custom_schema_view
 # API v1 URLs
 api_v1_patterns = [
     path('', include(('apps.accounts.urls', 'accounts'), namespace='accounts')),
+    path('', include(('apps.planner.urls', 'planner'), namespace='planner')),
 ]
 
 urlpatterns = [
