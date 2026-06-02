@@ -2,7 +2,6 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-
 class Task(models.Model):
     class Priority(models.TextChoices):
         LOW = "low", "Низкий"
@@ -62,7 +61,7 @@ class Task(models.Model):
 
     class Meta:
         verbose_name = "Задача"
-        verbose_name_plural = "Задачи"
+        verbose_name_plural = "1. Задачи"
         ordering = ("is_completed", "due_at", "-created_at")
         indexes = [
             models.Index(fields=["user", "due_at"]),
@@ -93,7 +92,7 @@ class MatrixBlockSetting(models.Model):
 
     class Meta:
         verbose_name = "Настройка блока Эйзенхауэра"
-        verbose_name_plural = "Настройки блоков Эйзенхауэра"
+        verbose_name_plural = "2. Матрица — блоки"
         unique_together = ("user", "block")
 
     def __str__(self) -> str:
@@ -120,69 +119,30 @@ class AppSettings(models.Model):
         blank=True,
         help_text="Порядок вкладок в нижнем меню.",
     )
-    notification_sound = models.CharField("Звук уведомления", max_length=120, default="default")
-    completion_sound = models.CharField("Звук завершения", max_length=120, default="default")
+    notification_sound = models.ForeignKey(
+        "pomodoro.Sound",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="Звук уведомления",
+        limit_choices_to={"category": "notification", "is_active": True},
+    )
+    completion_sound = models.ForeignKey(
+        "pomodoro.Sound",
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="Звук завершения",
+        limit_choices_to={"category": "completion", "is_active": True},
+    )
     vibration_enabled = models.BooleanField("Вибрация", default=True)
     is_premium = models.BooleanField("Премиум", default=False)
     premium_activated_at = models.DateTimeField("Дата активации премиум", blank=True, null=True)
 
     class Meta:
         verbose_name = "Настройки приложения"
-        verbose_name_plural = "Настройки приложения"
+        verbose_name_plural = "3. Настройки приложения"
 
     def __str__(self) -> str:
         return f"settings::{self.user_id}"
-
-
-class PomodoroSettings(models.Model):
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="pomodoro_settings",
-        verbose_name="Пользователь",
-    )
-    duration_minutes = models.PositiveIntegerField("Длительность таймера", default=30)
-    show_on_lock_screen = models.BooleanField("Показывать на экране блокировки", default=True)
-    timer_end_sound = models.CharField("Звук завершения таймера", max_length=120, default="default")
-    work_sound = models.CharField("Фоновая мелодия", max_length=120, default="none")
-
-    class Meta:
-        verbose_name = "Настройки помодоро"
-        verbose_name_plural = "Настройки помодоро"
-
-
-class PomodoroSession(models.Model):
-    class State(models.TextChoices):
-        IDLE = "idle", "Ожидание"
-        RUNNING = "running", "Запущен"
-        PAUSED = "paused", "На паузе"
-        STOPPED = "stopped", "Остановлен"
-        COMPLETED = "completed", "Завершен"
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="pomodoro_sessions",
-        verbose_name="Пользователь",
-    )
-    task = models.ForeignKey(
-        Task,
-        on_delete=models.SET_NULL,
-        related_name="pomodoro_sessions",
-        null=True,
-        blank=True,
-        verbose_name="Задача",
-    )
-    duration_minutes = models.PositiveIntegerField("Длительность", default=30)
-    state = models.CharField("Состояние", max_length=20, choices=State.choices, default=State.IDLE)
-    started_at = models.DateTimeField("Старт", blank=True, null=True)
-    ended_at = models.DateTimeField("Окончание", blank=True, null=True)
-    created_at = models.DateTimeField("Создано", auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Сессия помодоро"
-        verbose_name_plural = "Сессии помодоро"
-        ordering = ("-created_at",)
 
 
 class HelpRequest(models.Model):
@@ -198,7 +158,7 @@ class HelpRequest(models.Model):
 
     class Meta:
         verbose_name = "Запрос в поддержку"
-        verbose_name_plural = "Запросы в поддержку"
+        verbose_name_plural = "4. Запросы в поддержку"
         ordering = ("-created_at",)
 
 
@@ -212,7 +172,7 @@ class PremiumFeatureFlag(models.Model):
 
     class Meta:
         verbose_name = "Флаг премиум функции"
-        verbose_name_plural = "Флаги премиум функций"
+        verbose_name_plural = "5. Премиум — функции"
         ordering = ("key",)
 
     def __str__(self) -> str:
@@ -233,7 +193,7 @@ class LegalDocument(models.Model):
 
     class Meta:
         verbose_name = "Юридический документ"
-        verbose_name_plural = "Юридические документы"
+        verbose_name_plural = "6. Юридические документы"
         ordering = ("doc_type",)
 
     def __str__(self) -> str:

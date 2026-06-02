@@ -14,11 +14,10 @@ from .models import (
     AppSettings,
     LegalDocument,
     MatrixBlockSetting,
-    PomodoroSession,
-    PomodoroSettings,
     PremiumFeatureFlag,
     Task,
 )
+from apps.pomodoro.models import PomodoroSession, PomodoroSettings, Sound
 from .serializers import (
     AppSettingsSerializer,
     HelpRequestSerializer,
@@ -29,25 +28,40 @@ from .serializers import (
     PomodoroStateUpdateSerializer,
     PremiumCheckoutSerializer,
     PremiumFeatureFlagSerializer,
+    SoundSerializer,
     TaskSerializer,
     date_range_for_view,
     split_tasks_by_default_groups,
 )
 
 
+def _default_sound(key: str, category: str) -> Sound | None:
+    return Sound.objects.filter(key=key, category=category, is_active=True).first()
+
+
 def get_or_create_user_settings(user):
     """Создает дефолтные настройки приложения, если их еще нет у пользователя."""
-    return AppSettings.objects.get_or_create(
+    settings_obj, _ = AppSettings.objects.get_or_create(
         user=user,
         defaults={
             "bottom_tabs": ["tasks", "calendar", "matrix", "pomodoro", "settings"],
+            "notification_sound": _default_sound("default", Sound.Category.NOTIFICATION),
+            "completion_sound": _default_sound("default", Sound.Category.COMPLETION),
         },
-    )[0]
+    )
+    return settings_obj
 
 
 def get_or_create_pomodoro_settings(user):
     """Создает дефолтные настройки помодоро, если пользователь их еще не настраивал."""
-    return PomodoroSettings.objects.get_or_create(user=user)[0]
+    settings_obj, _ = PomodoroSettings.objects.get_or_create(
+        user=user,
+        defaults={
+            "timer_end_sound": _default_sound("bell", Sound.Category.TIMER_END),
+            "work_sound": _default_sound("none", Sound.Category.WORK_BACKGROUND),
+        },
+    )
+    return settings_obj
 
 
 def ensure_default_matrix_settings(user):
@@ -330,7 +344,7 @@ class AppSettingsAPIView(APIView):
     def get(self, request):
         """Отдает пользовательские настройки, которые управляют вкладками и системными параметрами."""
         settings_obj = get_or_create_user_settings(request.user)
-        return Response(AppSettingsSerializer(settings_obj).data, status=200)
+        return Response(AppSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
 
     @extend_schema(
         tags=["Настройки приложения"],
@@ -340,7 +354,9 @@ class AppSettingsAPIView(APIView):
     def patch(self, request):
         """Обновляет только переданные поля настроек приложения."""
         settings_obj = get_or_create_user_settings(request.user)
-        serializer = AppSettingsSerializer(settings_obj, data=request.data, partial=True)
+        serializer = AppSettingsSerializer(
+            settings_obj, data=request.data, partial=True, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=200)
@@ -360,6 +376,39 @@ class SettingsStubActionAPIView(APIView):
                         status=status.HTTP_202_ACCEPTED)
 
 
+class SoundCatalogAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Звуки"],
+        summary="Каталог звуков",
+        description=(
+            "Возвращает список звуков с emoji и URL аудиофайла. "
+            "Фильтр `category`: timer_end | work_background | notification | completion."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="category",
+                type=str,
+                required=False,
+                description="Категория звуков. Без параметра — все категории.",
+            ),
+        ],
+    )
+    def get(self, request):
+        """Каталог звуков для выбора в помодоро и настройках уведомлений."""
+        queryset = Sound.objects.filter(is_active=True).order_by("category", "sort_order", "key")
+        category = request.query_params.get("category")
+        if category:
+            if category not in dict(Sound.Category.choices):
+                return Response(
+                    {"category": [f"Допустимые значения: {', '.join(dict(Sound.Category.choices))}."]},
+                    status=400,
+                )
+            queryset = queryset.filter(category=category)
+        return Response(SoundSerializer(queryset, many=True, context={"request": request}).data, status=200)
+
+
 class PomodoroSettingsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -371,7 +420,7 @@ class PomodoroSettingsAPIView(APIView):
     def get(self, request):
         """Возвращает параметры таймера помодоро текущего пользователя."""
         settings_obj = get_or_create_pomodoro_settings(request.user)
-        return Response(PomodoroSettingsSerializer(settings_obj).data, status=200)
+        return Response(PomodoroSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
 
     @extend_schema(
         tags=["Помодоро"],
@@ -381,7 +430,9 @@ class PomodoroSettingsAPIView(APIView):
     def patch(self, request):
         """Обновляет длительность, звук и параметры отображения таймера."""
         settings_obj = get_or_create_pomodoro_settings(request.user)
-        serializer = PomodoroSettingsSerializer(settings_obj, data=request.data, partial=True)
+        serializer = PomodoroSettingsSerializer(
+            settings_obj, data=request.data, partial=True, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=200)
@@ -501,7 +552,7 @@ class PremiumActivateAPIView(APIView):
         settings_obj.is_premium = True
         settings_obj.premium_activated_at = timezone.now()
         settings_obj.save(update_fields=["is_premium", "premium_activated_at"])
-        return Response(AppSettingsSerializer(settings_obj).data, status=200)
+        return Response(AppSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
 
 
 class PremiumFeaturesAPIView(APIView):

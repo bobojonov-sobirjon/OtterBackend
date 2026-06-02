@@ -52,6 +52,7 @@ if not DEBUG:
 LOCAL_APPS = [
     'apps.accounts.apps.AccountsConfig',
     'apps.planner.apps.PlannerConfig',
+    'apps.pomodoro.apps.PomodoroConfig',
 ]
 
 THIRD_PARTY_APPS = [
@@ -418,6 +419,30 @@ JAZZMIN_SETTINGS = {
     ],
     "show_sidebar": True,
     "navigation_expanded": True,
+    "order_with_respect_to": [
+        "planner.task",
+        "planner.matrixblocksetting",
+        "planner.appsettings",
+        "planner.helprequest",
+        "planner.premiumfeatureflag",
+        "planner.legaldocument",
+        "pomodoro.sound",
+        "pomodoro.pomodorosettings",
+        "pomodoro.pomodorosession",
+        "accounts.customuser",
+    ],
+    "icons": {
+        "planner.task": "fas fa-list-check",
+        "planner.matrixblocksetting": "fas fa-table-cells",
+        "planner.appsettings": "fas fa-gear",
+        "planner.helprequest": "fas fa-life-ring",
+        "planner.premiumfeatureflag": "fas fa-crown",
+        "planner.legaldocument": "fas fa-file-contract",
+        "pomodoro.sound": "fas fa-music",
+        "pomodoro.pomodorosettings": "fas fa-sliders",
+        "pomodoro.pomodorosession": "fas fa-clock",
+        "accounts.customuser": "fas fa-users",
+    },
 }
 
 # =============================================================================

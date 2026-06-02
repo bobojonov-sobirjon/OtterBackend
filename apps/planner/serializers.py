@@ -8,11 +8,31 @@ from .models import (
     HelpRequest,
     LegalDocument,
     MatrixBlockSetting,
-    PomodoroSession,
-    PomodoroSettings,
     PremiumFeatureFlag,
     Task,
 )
+from apps.pomodoro.models import PomodoroSession, PomodoroSettings, Sound
+
+
+def _sound_queryset(category: str):
+    return Sound.objects.filter(category=category, is_active=True).order_by("sort_order", "key")
+
+
+class SoundSerializer(serializers.ModelSerializer):
+    audio_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Sound
+        fields = ("key", "category", "title", "emoji", "audio_url", "sort_order")
+        read_only_fields = fields
+
+    def get_audio_url(self, obj: Sound) -> str | None:
+        if not obj.audio_file:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.audio_file.url)
+        return obj.audio_file.url
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -68,6 +88,17 @@ class MatrixBlockSettingSerializer(serializers.ModelSerializer):
 
 
 class AppSettingsSerializer(serializers.ModelSerializer):
+    notification_sound = serializers.SlugRelatedField(
+        slug_field="key",
+        queryset=_sound_queryset(Sound.Category.NOTIFICATION),
+    )
+    completion_sound = serializers.SlugRelatedField(
+        slug_field="key",
+        queryset=_sound_queryset(Sound.Category.COMPLETION),
+    )
+    notification_sound_detail = SoundSerializer(source="notification_sound", read_only=True)
+    completion_sound_detail = SoundSerializer(source="completion_sound", read_only=True)
+
     class Meta:
         model = AppSettings
         fields = (
@@ -80,18 +111,50 @@ class AppSettingsSerializer(serializers.ModelSerializer):
             "show_completed",
             "bottom_tabs",
             "notification_sound",
+            "notification_sound_detail",
             "completion_sound",
+            "completion_sound_detail",
             "vibration_enabled",
             "is_premium",
             "premium_activated_at",
         )
-        read_only_fields = ("is_premium", "premium_activated_at")
+        read_only_fields = ("is_premium", "premium_activated_at", "notification_sound_detail", "completion_sound_detail")
 
 
 class PomodoroSettingsSerializer(serializers.ModelSerializer):
+    timer_end_sound = serializers.SlugRelatedField(
+        slug_field="key",
+        queryset=_sound_queryset(Sound.Category.TIMER_END),
+    )
+    work_sound = serializers.SlugRelatedField(
+        slug_field="key",
+        queryset=_sound_queryset(Sound.Category.WORK_BACKGROUND),
+    )
+    timer_end_sound_detail = SoundSerializer(source="timer_end_sound", read_only=True)
+    work_sound_detail = SoundSerializer(source="work_sound", read_only=True)
+
     class Meta:
         model = PomodoroSettings
-        fields = ("duration_minutes", "show_on_lock_screen", "timer_end_sound", "work_sound")
+        fields = (
+            "duration_minutes",
+            "short_break_minutes",
+            "show_on_lock_screen",
+            "timer_end_sound",
+            "timer_end_sound_detail",
+            "work_sound",
+            "work_sound_detail",
+        )
+        read_only_fields = ("timer_end_sound_detail", "work_sound_detail")
+
+    def validate_short_break_minutes(self, value: int) -> int:
+        if value not in {3, 5, 7, 10}:
+            raise serializers.ValidationError("Допустимые значения: 3, 5, 7, 10.")
+        return value
+
+    def validate_duration_minutes(self, value: int) -> int:
+        if value not in {15, 20, 25, 30, 45, 60}:
+            raise serializers.ValidationError("Допустимые значения: 15, 20, 25, 30, 45, 60.")
+        return value
 
 
 class PomodoroSessionSerializer(serializers.ModelSerializer):
