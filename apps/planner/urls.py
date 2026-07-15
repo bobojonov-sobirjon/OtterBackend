@@ -12,9 +12,6 @@ from .views import (
     PomodoroSessionStateAPIView,
     PomodoroSettingsAPIView,
     SoundCatalogAPIView,
-    PremiumActivateAPIView,
-    PremiumCheckoutAPIView,
-    PremiumFeaturesAPIView,
     SettingsStubActionAPIView,
     TaskViewSet,
 )
@@ -35,9 +32,6 @@ urlpatterns = [
     path("settings/", AppSettingsAPIView.as_view(), name="app-settings"),
     path("settings/stub-action/", SettingsStubActionAPIView.as_view(), name="settings-stub-action"),
     path("help/", HelpCenterAPIView.as_view(), name="help"),
-    path("premium/checkout/", PremiumCheckoutAPIView.as_view(), name="premium-checkout"),
-    path("premium/activate/", PremiumActivateAPIView.as_view(), name="premium-activate"),
-    path("premium/features/", PremiumFeaturesAPIView.as_view(), name="premium-features"),
     path("legal/documents/", LegalDocumentsAPIView.as_view(), name="legal-documents"),
 ]
 

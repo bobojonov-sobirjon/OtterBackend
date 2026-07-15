@@ -53,6 +53,7 @@ LOCAL_APPS = [
     'apps.accounts.apps.AccountsConfig',
     'apps.planner.apps.PlannerConfig',
     'apps.pomodoro.apps.PomodoroConfig',
+    'apps.billing.apps.BillingConfig',
 ]
 
 THIRD_PARTY_APPS = [
@@ -426,6 +427,10 @@ JAZZMIN_SETTINGS = {
         "planner.helprequest",
         "planner.premiumfeatureflag",
         "planner.legaldocument",
+        "billing.tariff",
+        "billing.subscription",
+        "billing.recurringconsent",
+        "billing.payment",
         "pomodoro.sound",
         "pomodoro.pomodorosettings",
         "pomodoro.pomodorosession",
@@ -438,6 +443,10 @@ JAZZMIN_SETTINGS = {
         "planner.helprequest": "fas fa-life-ring",
         "planner.premiumfeatureflag": "fas fa-crown",
         "planner.legaldocument": "fas fa-file-contract",
+        "billing.tariff": "fas fa-tags",
+        "billing.subscription": "fas fa-id-card",
+        "billing.recurringconsent": "fas fa-file-signature",
+        "billing.payment": "fas fa-credit-card",
         "pomodoro.sound": "fas fa-music",
         "pomodoro.pomodorosettings": "fas fa-sliders",
         "pomodoro.pomodorosession": "fas fa-clock",
@@ -450,3 +459,37 @@ JAZZMIN_SETTINGS = {
 # =============================================================================
 
 PASSWORD_RESET_CODE_TTL_SECONDS = int(os.getenv("PASSWORD_RESET_CODE_TTL_SECONDS", "600"))  # 10 min
+
+# =============================================================================
+# ROBOKASSA / BILLING
+# =============================================================================
+
+ROBOKASSA_MERCHANT_LOGIN = os.getenv("ROBOKASSA_MERCHANT_LOGIN", "ottertime")
+ROBOKASSA_PASSWORD1 = os.getenv("ROBOKASSA_PASSWORD1", "")
+ROBOKASSA_PASSWORD2 = os.getenv("ROBOKASSA_PASSWORD2", "")
+ROBOKASSA_IS_TEST = os.getenv("ROBOKASSA_IS_TEST", "1")
+ROBOKASSA_PAYMENT_URL = os.getenv(
+    "ROBOKASSA_PAYMENT_URL",
+    "https://auth.robokassa.ru/Merchant/Index.aspx",
+)
+ROBOKASSA_RECURRING_URL = os.getenv(
+    "ROBOKASSA_RECURRING_URL",
+    "https://auth.robokassa.ru/Merchant/Recurring",
+)
+ROBOKASSA_SNO = os.getenv("ROBOKASSA_SNO", "usn_income")  # система налогообложения для чека
+ROBOKASSA_RESULT_URL = os.getenv("ROBOKASSA_RESULT_URL", "")
+ROBOKASSA_SUCCESS_URL = os.getenv("ROBOKASSA_SUCCESS_URL", "https://otters.me.ru/premium/success")
+ROBOKASSA_FAIL_URL = os.getenv("ROBOKASSA_FAIL_URL", "https://otters.me.ru/premium/fail")
+ROBOKASSA_RECURRING_DAYS_BEFORE = int(os.getenv("ROBOKASSA_RECURRING_DAYS_BEFORE", "1"))
+# Error 34 until Robokassa enables recurrents for the shop — keep 0 until approved.
+ROBOKASSA_RECURRING_ENABLED = os.getenv("ROBOKASSA_RECURRING_ENABLED", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# 0 = without Receipt (simpler signature for first tests). Set 1 when fiscalization is ready.
+ROBOKASSA_SEND_RECEIPT = os.getenv("ROBOKASSA_SEND_RECEIPT", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)

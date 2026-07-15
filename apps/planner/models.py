@@ -136,6 +136,7 @@ class AppSettings(models.Model):
     vibration_enabled = models.BooleanField("Вибрация", default=True)
     is_premium = models.BooleanField("Премиум", default=False)
     premium_activated_at = models.DateTimeField("Дата активации премиум", blank=True, null=True)
+    premium_until = models.DateTimeField("Премиум действует до", blank=True, null=True)
 
     class Meta:
         verbose_name = "Настройки приложения"

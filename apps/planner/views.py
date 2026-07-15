@@ -14,7 +14,6 @@ from .models import (
     AppSettings,
     LegalDocument,
     MatrixBlockSetting,
-    PremiumFeatureFlag,
     Task,
 )
 from apps.pomodoro.models import PomodoroSession, PomodoroSettings, Sound
@@ -26,8 +25,6 @@ from .serializers import (
     PomodoroSessionSerializer,
     PomodoroSettingsSerializer,
     PomodoroStateUpdateSerializer,
-    PremiumCheckoutSerializer,
-    PremiumFeatureFlagSerializer,
     SoundSerializer,
     TaskSerializer,
     date_range_for_view,
@@ -519,54 +516,6 @@ class HelpCenterAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         ticket = serializer.save(user=request.user)
         return Response(HelpRequestSerializer(ticket).data, status=201)
-
-
-class PremiumCheckoutAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    @extend_schema(
-        tags=["Премиум"],
-        summary="Создать ссылку на оплату премиум",
-        description="Формирует URL для перехода в платёжный шлюз Robokassa.",
-    )
-    def post(self, request):
-        """Формирует заглушку ссылки на оплату через Robokassa для мобильного клиента."""
-        serializer = PremiumCheckoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        tariff = serializer.validated_data["tariff"]
-        fake_url = f"https://auth.robokassa.ru/Merchant/Index.aspx?tariff={tariff}&user={request.user.id}"
-        return Response({"checkout_url": fake_url, "provider": "robokassa"}, status=200)
-
-
-class PremiumActivateAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    @extend_schema(
-        tags=["Премиум"],
-        summary="Активировать премиум",
-        description="Активирует премиум-статус пользователя после успешного подтверждения оплаты.",
-    )
-    def post(self, request):
-        """Активирует премиум пользователю после подтверждения оплаты от платежного сервиса."""
-        settings_obj = get_or_create_user_settings(request.user)
-        settings_obj.is_premium = True
-        settings_obj.premium_activated_at = timezone.now()
-        settings_obj.save(update_fields=["is_premium", "premium_activated_at"])
-        return Response(AppSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
-
-
-class PremiumFeaturesAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    @extend_schema(
-        tags=["Премиум"],
-        summary="Список флагов премиум-функций",
-        description="Возвращает включенные feature-flag'и для гибкого управления платным функционалом.",
-    )
-    def get(self, request):
-        """Возвращает список фич, которые можно гибко включать в премиум на бэкенде."""
-        flags = PremiumFeatureFlag.objects.filter(is_enabled=True).order_by("key")
-        return Response(PremiumFeatureFlagSerializer(flags, many=True).data, status=200)
 
 
 class LegalDocumentsAPIView(APIView):

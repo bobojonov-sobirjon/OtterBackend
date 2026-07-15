@@ -117,8 +117,15 @@ class AppSettingsSerializer(serializers.ModelSerializer):
             "vibration_enabled",
             "is_premium",
             "premium_activated_at",
+            "premium_until",
         )
-        read_only_fields = ("is_premium", "premium_activated_at", "notification_sound_detail", "completion_sound_detail")
+        read_only_fields = (
+            "is_premium",
+            "premium_activated_at",
+            "premium_until",
+            "notification_sound_detail",
+            "completion_sound_detail",
+        )
 
 
 class PomodoroSettingsSerializer(serializers.ModelSerializer):
@@ -173,10 +180,6 @@ class HelpRequestSerializer(serializers.ModelSerializer):
         model = HelpRequest
         fields = ("id", "message", "screenshot", "created_at")
         read_only_fields = ("created_at",)
-
-
-class PremiumCheckoutSerializer(serializers.Serializer):
-    tariff = serializers.CharField(required=False, default="monthly")
 
 
 class PremiumFeatureFlagSerializer(serializers.ModelSerializer):

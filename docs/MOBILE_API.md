@@ -1324,7 +1324,80 @@ GET /api/v1/sounds/?category=work_background
 
 ---
 
-### 6.6 Premium — Checkout
+### 6.6 Premium — Tariffs
+
+| | |
+|---|---|
+| **METHOD** | `GET` |
+| **URL** | `/api/v1/premium/tariffs/` |
+| **Auth** | **Bearer required** |
+
+```json
+[
+  {
+    "code": "monthly",
+    "title": "Месячная подписка",
+    "description": "...",
+    "price": "299.00",
+    "currency": "RUB",
+    "duration_days": 30,
+    "promo_days": 7,
+    "is_recurring": true,
+    "sort_order": 1
+  }
+]
+```
+
+> Цены/промо меняются в Admin → Биллинг → Тарифы. Robokassa кабинет промо не даёт — `promo_days` считается на бэкенде.
+
+---
+
+### 6.7 Premium — Subscription status
+
+| | |
+|---|---|
+| **METHOD** | `GET` |
+| **URL** | `/api/v1/premium/subscription/` |
+| **Auth** | **Bearer required** |
+
+```json
+{
+  "status": "trial",
+  "tariff": { "code": "monthly", "...": "..." },
+  "promo_until": "2026-07-18T12:00:00Z",
+  "premium_until": "2026-07-18T12:00:00Z",
+  "recurring_enabled": true,
+  "cancelled_at": null,
+  "is_premium": true,
+  "updated_at": "..."
+}
+```
+
+`status`: `none` | `trial` | `active` | `past_due` | `cancelled` | `expired`
+
+---
+
+### 6.8 Premium — Start trial (промо)
+
+| | |
+|---|---|
+| **METHOD** | `POST` |
+| **URL** | `/api/v1/premium/trial/` |
+| **Auth** | **Bearer required** |
+
+```json
+{
+  "tariff": "monthly",
+  "recurring_consent": true,
+  "offer_version": "2026-07-01"
+}
+```
+
+Для `is_recurring` тарифов **`recurring_consent` обязателен** (чекбокс на клиенте, по умолчанию OFF). Согласие сохраняется в БД.
+
+---
+
+### 6.9 Premium — Checkout (Robokassa)
 
 | | |
 |---|---|
@@ -1332,67 +1405,70 @@ GET /api/v1/sounds/?category=work_background
 | **URL** | `/api/v1/premium/checkout/` |
 | **Auth** | **Bearer required** |
 
-#### Body params
-
-| Поле | Тип | Required | Default | Описание |
-|---|---|---|---|---|
-| `tariff` | string | нет | `"monthly"` | Тарифный план |
-
-#### Example request
-
 ```json
 {
-  "tariff": "monthly"
+  "tariff": "monthly",
+  "recurring_consent": true,
+  "offer_version": "2026-07-01"
 }
 ```
 
-#### Success response `200`
-
 ```json
 {
-  "checkout_url": "https://auth.robokassa.ru/Merchant/Index.aspx?tariff=monthly&user=1",
-  "provider": "robokassa"
+  "checkout_url": "https://auth.robokassa.ru/Merchant/Index.aspx?...",
+  "provider": "robokassa",
+  "payment": {
+    "invoice_id": 100001,
+    "amount": "299.00",
+    "kind": "initial",
+    "status": "pending",
+    "checkout_url": "..."
+  }
 }
 ```
 
-> Мобильное приложение открывает `checkout_url` в WebView / браузере.
+Клиент открывает `checkout_url`. После оплаты Robokassa бьёт в ResultURL (сервер).
 
 ---
 
-### 6.7 Premium — Activate
+### 6.10 Premium — Cancel auto-renew
+
+| | |
+|---|---|
+| **METHOD** | `POST` |
+| **URL** | `/api/v1/premium/cancel/` |
+| **Auth** | **Bearer required** |
+
+Отключает автосписание. Доступ до `premium_until` сохраняется.
+
+---
+
+### 6.11 Premium — Robokassa ResultURL
+
+| | |
+|---|---|
+| **METHOD** | `POST` (также GET) |
+| **URL** | `/api/v1/premium/robokassa/result/` |
+| **Auth** | **No** (проверка SignatureValue) |
+
+Настраивается в кабинете Robokassa → Технические настройки → Result URL.  
+Ответ: `OK{InvId}`.
+
+---
+
+### 6.12 Premium — Activate (только DEBUG)
 
 | | |
 |---|---|
 | **METHOD** | `POST` |
 | **URL** | `/api/v1/premium/activate/` |
 | **Auth** | **Bearer required** |
-| **Body** | пустое |
 
-Вызывается после успешной оплаты.
-
-#### Success response `200`
-
-```json
-{
-  "language": "ru",
-  "show_overdue": true,
-  "show_today": true,
-  "show_tomorrow": true,
-  "show_later": true,
-  "show_no_deadline": true,
-  "show_completed": true,
-  "bottom_tabs": ["tasks", "calendar", "matrix", "pomodoro", "settings"],
-  "notification_sound": "default",
-  "completion_sound": "default",
-  "vibration_enabled": true,
-  "is_premium": true,
-  "premium_activated_at": "2026-05-30T15:00:00+03:00"
-}
-```
+В production `403`. Премиум включает только ResultURL.
 
 ---
 
-### 6.8 Premium — Feature flags
+### 6.13 Premium — Feature flags
 
 | | |
 |---|---|
@@ -1400,6 +1476,20 @@ GET /api/v1/sounds/?category=work_background
 | **URL** | `/api/v1/premium/features/` |
 | **Auth** | **Bearer required** |
 
+---
+
+### 6.13b App Settings — premium fields
+
+В `GET/PATCH /api/v1/settings/` также:
+- `is_premium` (read-only)
+- `premium_activated_at` (read-only)
+- `premium_until` (read-only)
+
+Подробнее по Robokassa: [ROBOKASSA_SETUP.md](./ROBOKASSA_SETUP.md)
+
+---
+
+### 6.14 Legal documents — List
 #### Success response `200`
 
 ```json
@@ -1492,7 +1582,7 @@ GET /api/v1/sounds/?category=work_background
 - [ ] Каталог звуков — `GET /sounds/?category=...` (emoji + audio_url)
 - [ ] Помодоро — settings + sessions + state
 - [ ] Настройки — `GET/PATCH /settings/`
-- [ ] Премиум — checkout → WebView → activate
+- [ ] Премиум — tariffs / trial / checkout / ResultURL / cancel
 - [ ] Юридические документы — `GET /legal/documents/` (без auth)
 
 ---
