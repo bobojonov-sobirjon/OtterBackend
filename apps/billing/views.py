@@ -123,7 +123,8 @@ class PremiumTrialAPIView(APIView):
         if not tariff:
             return Response({"detail": "Тариф не найден."}, status=400)
         consent = None
-        if tariff.is_recurring:
+        # Consent обязателен только когда Robokassa recurring реально включён.
+        if tariff.is_recurring and robokassa.recurring_enabled():
             if not serializer.validated_data.get("recurring_consent"):
                 return Response(
                     {"detail": "Нужно согласие на автоматические списания (чекбокс)."},
@@ -136,10 +137,18 @@ class PremiumTrialAPIView(APIView):
                 ip_address=_client_ip(request),
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
+        elif tariff.is_recurring and serializer.validated_data.get("recurring_consent"):
+            consent = record_consent(
+                user=request.user,
+                tariff=tariff,
+                offer_version=serializer.validated_data.get("offer_version", ""),
+                ip_address=_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
         try:
             sub = start_promo(user=request.user, tariff=tariff, consent=consent)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=400)
+        except ValueError as exp:
+            return Response({"detail": str(exp)}, status=400)
         return Response(SubscriptionSerializer(sub).data, status=200)
 
 
@@ -166,11 +175,48 @@ class RobokassaResultAPIView(APIView):
         description="Вызывается Robokassa после оплаты. Ответ должен быть OK{InvId}.",
     )
     def post(self, request):
-        data = request.data
+        return self._handle_result(request)
+
+    def get(self, request):
+        # Кабинет часто шлёт Result URL методом GET (query string).
+        return self._handle_result(request)
+
+    def _handle_result(self, request):
+        # POST → request.data; GET → query_params. Объединяем оба.
+        data = {}
+        if hasattr(request, "query_params"):
+            data.update({k: v for k, v in request.query_params.items()})
+        if getattr(request, "data", None):
+            try:
+                data.update({k: v for k, v in request.data.items()})
+            except Exception:
+                pass
+        # Fallback для сырого QueryDict
+        if hasattr(request, "GET") and request.GET:
+            data.update({k: v for k, v in request.GET.items()})
+        if hasattr(request, "POST") and request.POST:
+            data.update({k: v for k, v in request.POST.items()})
+
         out_sum = str(data.get("OutSum") or data.get("out_sum") or "")
-        inv_id = data.get("InvId") or data.get("inv_id")
-        signature = str(data.get("SignatureValue") or data.get("signaturevalue") or "")
+        inv_id = data.get("InvId") or data.get("InvoiceID") or data.get("inv_id")
+        signature = str(
+            data.get("SignatureValue")
+            or data.get("signaturevalue")
+            or data.get("Signature")
+            or ""
+        )
+
+        logger = __import__("logging").getLogger(__name__)
+        logger.info(
+            "Robokassa ResultURL method=%s InvId=%s OutSum=%s keys=%s",
+            request.method,
+            inv_id,
+            out_sum,
+            sorted(data.keys()),
+        )
+
         if not out_sum or not inv_id or not signature:
+            logger.warning("Robokassa ResultURL bad request: missing fields data=%s", data)
             return HttpResponse("bad request", status=400)
 
         try:
@@ -178,20 +224,28 @@ class RobokassaResultAPIView(APIView):
         except (TypeError, ValueError):
             return HttpResponse("bad inv", status=400)
 
-        shp = robokassa.extract_shp(dict(data.items()) if hasattr(data, "items") else {})
+        shp = robokassa.extract_shp(data)
         if not robokassa.verify_result_signature(out_sum, invoice_id, signature, shp=shp):
+            logger.warning(
+                "Robokassa ResultURL bad sign InvId=%s OutSum=%s shp=%s",
+                invoice_id,
+                out_sum,
+                shp,
+            )
             return HttpResponse("bad sign", status=400)
 
         payment = Payment.objects.filter(invoice_id=invoice_id).select_related("tariff", "user").first()
         if not payment:
+            logger.warning("Robokassa ResultURL payment not found InvId=%s", invoice_id)
             return HttpResponse("not found", status=404)
 
-        apply_successful_payment(payment, raw=dict(data.items()) if hasattr(data, "items") else {"OutSum": out_sum})
+        apply_successful_payment(payment, raw=dict(data))
+        logger.info(
+            "Robokassa ResultURL OK InvId=%s user=%s",
+            invoice_id,
+            payment.user_id,
+        )
         return HttpResponse(f"OK{invoice_id}", content_type="text/plain")
-
-    def get(self, request):
-        # некоторые настройки шлют GET
-        return self.post(request)
 
 
 class PremiumActivateAPIView(APIView):

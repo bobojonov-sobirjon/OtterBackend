@@ -180,7 +180,8 @@ def apply_successful_payment(payment: Payment, raw: dict | None = None) -> Subsc
 
     if payment.kind in {Payment.Kind.INITIAL, Payment.Kind.ONE_TIME} and tariff.is_recurring:
         sub.parent_invoice_id = payment.invoice_id
-        sub.recurring_enabled = True
+        # Автосписание только если Robokassa recurring реально включён.
+        sub.recurring_enabled = bool(robokassa.recurring_enabled())
 
     if tariff.duration_days == 0:
         sub.premium_until = None

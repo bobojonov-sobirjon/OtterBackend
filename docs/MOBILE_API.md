@@ -752,7 +752,9 @@ Refresh-токен недействителен или просрочен.
 
 ## 5. Этап 3 — Календарь, Матрица, Помодоро
 
-> **Frontend (Pomodoro):** [POMODORO_BEGIN.md](./POMODORO_BEGIN.md) (быстрый старт) · [POMODORO_FRONTEND.md](./POMODORO_FRONTEND.md) (полный гайд)
+> **Frontend (Pomodoro):** [POMODORO_BEGIN.md](./POMODORO_BEGIN.md) (быстрый старт) · [POMODORO_FRONTEND.md](./POMODORO_FRONTEND.md) (полный гайд)  
+> **Frontend (Premium / Robokassa):** [PAYMENT_FRONTEND.md](./PAYMENT_FRONTEND.md)
+
 
 ---
 
