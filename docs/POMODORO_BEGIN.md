@@ -9,7 +9,7 @@
 
 | Что | Где |
 |---|---|
-| Base URL (PROD) | `http://159.194.221.54:8005` |
+| Base URL (PROD) | `https://admin.ottertime.ru` |
 | API prefix | `/api/v1/` |
 | Auth | `Authorization: Bearer <access_token>` |
 | Swagger | `{BASE_URL}/docs/` |

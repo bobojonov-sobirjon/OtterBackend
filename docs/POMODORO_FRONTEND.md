@@ -9,7 +9,7 @@
 
 | Параметр | Значение |
 |---|---|
-| **Base URL (PROD)** | `http://159.194.221.54:8005` |
+| **Base URL (PROD)** | `https://admin.ottertime.ru` |
 | **Base URL (DEV)** | `http://127.0.0.1:8000` |
 | **Prefix** | `/api/v1/` |
 | **Auth** | JWT — заголовок `Authorization: Bearer <access_token>` |
@@ -110,7 +110,7 @@ GET /api/v1/sounds/?category=timer_end
     "category": "work_background",
     "title": "Кафе",
     "emoji": "☕",
-    "audio_url": "http://159.194.221.54:8005/media/sounds/coffee.mp3",
+    "audio_url": "https://admin.ottertime.ru/media/sounds/coffee.mp3",
     "sort_order": 3
   }
 ]
@@ -150,7 +150,7 @@ GET /api/v1/sounds/?category=timer_end
     "category": "timer_end",
     "title": "Колокольчик",
     "emoji": "🔔",
-    "audio_url": "http://159.194.221.54:8005/media/sounds/bell.mp3",
+    "audio_url": "https://admin.ottertime.ru/media/sounds/bell.mp3",
     "sort_order": 1
   },
   "work_sound": "none",
@@ -383,7 +383,7 @@ GET /api/v1/tasks/grouped/
 ## 11. Пример сервиса (pseudo-code)
 
 ```typescript
-const API = "http://159.194.221.54:8005/api/v1";
+const API = "https://admin.ottertime.ru/api/v1";
 
 async function api(path: string, options: RequestInit = {}) {
   const token = await getAccessToken();

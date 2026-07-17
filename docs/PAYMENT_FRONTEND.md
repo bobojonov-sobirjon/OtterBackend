@@ -23,7 +23,7 @@
 | Environment | URL |
 |---|---|
 | **DEV (local)** | `http://127.0.0.1:8000` |
-| **PROD** | `https://admin.skkamni.ru` |
+| **PROD** | `https://admin.ottertime.ru` |
 
 Client builds requests as: `BASE_URL + /api/v1/...`
 
@@ -748,7 +748,7 @@ interface CheckoutResponse {
 ## 10. Minimal client sketch
 
 ```typescript
-const API = "https://admin.skkamni.ru/api/v1";
+const API = "https://admin.ottertime.ru/api/v1";
 
 async function api(path: string, options: RequestInit = {}) {
   const token = await getAccessToken();

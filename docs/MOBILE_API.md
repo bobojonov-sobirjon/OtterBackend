@@ -23,7 +23,7 @@
 |---|---|
 | **DEV (local)** | `http://127.0.0.1:8000` |
 | **STAGING** | `https://staging.example.com` |
-| **PROD** | `http://159.194.221.54:8005` |
+| **PROD** | `https://admin.ottertime.ru` |
 
 > Мобильное приложение строит URL как: `BASE_URL + /api/v1/...`
 
@@ -392,7 +392,7 @@ Refresh-токен недействителен или просрочен.
   "email": "user@example.com",
   "first_name": "Иван",
   "last_name": "Петров",
-  "avatar": "http://159.194.221.54:8005/media/avatars/file.jpg"
+  "avatar": "https://admin.ottertime.ru/media/avatars/file.jpg"
 }
 ```
 
@@ -423,7 +423,7 @@ Refresh-токен недействителен или просрочен.
   "email": "user@example.com",
   "first_name": "Иван",
   "last_name": "Петров",
-  "avatar": "http://159.194.221.54:8005/media/avatars/new.jpg"
+  "avatar": "https://admin.ottertime.ru/media/avatars/new.jpg"
 }
 ```
 
@@ -939,7 +939,7 @@ GET /api/v1/sounds/?category=work_background
     "category": "work_background",
     "title": "Дождь",
     "emoji": "🌧️",
-    "audio_url": "http://159.194.221.54:8005/media/sounds/rain.mp3",
+    "audio_url": "https://admin.ottertime.ru/media/sounds/rain.mp3",
     "sort_order": 1
   },
   {
@@ -1003,7 +1003,7 @@ GET /api/v1/sounds/?category=work_background
     "category": "timer_end",
     "title": "Колокольчик",
     "emoji": "🔔",
-    "audio_url": "http://159.194.221.54:8005/media/sounds/bell.mp3",
+    "audio_url": "https://admin.ottertime.ru/media/sounds/bell.mp3",
     "sort_order": 1
   },
   "work_sound": "coffee",
@@ -1012,7 +1012,7 @@ GET /api/v1/sounds/?category=work_background
     "category": "work_background",
     "title": "Кафе",
     "emoji": "☕",
-    "audio_url": "http://159.194.221.54:8005/media/sounds/coffee.mp3",
+    "audio_url": "https://admin.ottertime.ru/media/sounds/coffee.mp3",
     "sort_order": 3
   }
 }

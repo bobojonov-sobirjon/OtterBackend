@@ -31,7 +31,7 @@ ALLOWED_HOSTS = [
     "159.194.221.54",
     "localhost",
     "127.0.0.1",
-    "admin.skkamni.ru",
+    "admin.ottertime.ru",
 ]
 
 # Security headers (production uchun)
@@ -281,7 +281,7 @@ SIMPLE_JWT = {
 # CORS SETTINGS
 # =============================================================================
 
-_cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000, http://localhost:8000, "http://159.194.221.54:8005", "https://admin.skkamni.ru"')
+_cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000, http://localhost:8000, "http://159.194.221.54:8005", "https://admin.ottertime.ru"')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only in development
@@ -321,7 +321,7 @@ SPECTACULAR_SETTINGS = {
 
 CSRF_TRUSTED_ORIGINS = [
     "http://159.194.221.54:8005",
-    "https://admin.skkamni.ru",
+    "https://admin.ottertime.ru",
 ]
 
 # =============================================================================
@@ -478,8 +478,8 @@ ROBOKASSA_RECURRING_URL = os.getenv(
 )
 ROBOKASSA_SNO = os.getenv("ROBOKASSA_SNO", "usn_income")  # система налогообложения для чека
 ROBOKASSA_RESULT_URL = os.getenv("ROBOKASSA_RESULT_URL", "")
-ROBOKASSA_SUCCESS_URL = os.getenv("ROBOKASSA_SUCCESS_URL", "https://otters.me.ru/premium/success")
-ROBOKASSA_FAIL_URL = os.getenv("ROBOKASSA_FAIL_URL", "https://otters.me.ru/premium/fail")
+ROBOKASSA_SUCCESS_URL = os.getenv("ROBOKASSA_SUCCESS_URL", "https://ottertime.ru/premium/success")
+ROBOKASSA_FAIL_URL = os.getenv("ROBOKASSA_FAIL_URL", "https://ottertime.ru/premium/fail")
 ROBOKASSA_RECURRING_DAYS_BEFORE = int(os.getenv("ROBOKASSA_RECURRING_DAYS_BEFORE", "1"))
 # Error 34 until Robokassa enables recurrents for the shop — keep 0 until approved.
 ROBOKASSA_RECURRING_ENABLED = os.getenv("ROBOKASSA_RECURRING_ENABLED", "0").lower() in (

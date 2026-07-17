@@ -66,7 +66,7 @@ ROBOKASSA_MERCHANT_LOGIN=ottertime
 ROBOKASSA_PASSWORD1=xxxxxxxx          # Пароль #1
 ROBOKASSA_PASSWORD2=yyyyyyyy          # Пароль #2
 ROBOKASSA_IS_TEST=1                   # Test rejim: 1, Production: 0
-ROBOKASSA_RESULT_URL=https://API_DOMAIN/api/v1/premium/robokassa/result/
+ROBOKASSA_RESULT_URL=https://admin.ottertime.ru/api/v1/premium/robokassa/result/
 ROBOKASSA_SUCCESS_URL=https://otters.me.ru/premium/success
 ROBOKASSA_FAIL_URL=https://otters.me.ru/premium/fail
 ```
@@ -83,7 +83,7 @@ ROBOKASSA_FAIL_URL=https://otters.me.ru/premium/fail
 
 | Maydon | Qiymat (misol) | Kimga |
 |---|---|---|
-| **Result URL** | `https://API_DOMAIN/api/v1/premium/robokassa/result/` | Backend (server-to-server) |
+| **Result URL** | `https://admin.ottertime.ru/api/v1/premium/robokassa/result/` | Backend (server-to-server) |
 | **Success URL** | `https://otters.me.ru/premium/success` | Foydalanuvchi brauzeri (web) |
 | **Fail URL** | `https://otters.me.ru/premium/fail` | Foydalanuvchi brauzeri (web) |
 | Method | **POST** (Result URL uchun tavsiya) | — |
@@ -274,7 +274,7 @@ Default tariflar: `monthly` (7 kun promo), `yearly`, `lifetime`.
 - [ ] Magazin **OTTER** aktiv (`ottertime`)
 - [ ] **Технические настройки** ochildi
 - [ ] **Пароль #1** va **Пароль #2** nusxa olindi (xavfsiz joyga)
-- [ ] **Result URL** = `https://API_DOMAIN/api/v1/premium/robokassa/result/`
+- [ ] **Result URL** = `https://admin.ottertime.ru/api/v1/premium/robokassa/result/`
 - [ ] **Success URL** / **Fail URL** = web sahifalar
 - [ ] **Алгоритм** = MD5
 - [ ] Test rejim yoqilgan
@@ -318,6 +318,6 @@ Default tariflar: `monthly` (7 kun promo), `yearly`, `lifetime`.
 ```env
 ROBOKASSA_PASSWORD1=...
 ROBOKASSA_PASSWORD2=...
-ROBOKASSA_RESULT_URL=https://YOUR_API_DOMAIN/api/v1/premium/robokassa/result/
+ROBOKASSA_RESULT_URL=https://admin.ottertime.ru/api/v1/premium/robokassa/result/
 ROBOKASSA_IS_TEST=1
 ```
