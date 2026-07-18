@@ -64,7 +64,30 @@ class PaymentSerializer(serializers.ModelSerializer):
             "currency",
             "kind",
             "status",
+            "channel",
             "checkout_url",
             "paid_at",
             "created_at",
         )
+
+
+class RobokassaSdkParamsSerializer(serializers.Serializer):
+    merchant_login = serializers.CharField()
+    invoice_id = serializers.IntegerField()
+    out_sum = serializers.CharField()
+    description = serializers.CharField()
+    signature_value = serializers.CharField()
+    culture = serializers.CharField()
+    encoding = serializers.CharField()
+    is_test = serializers.BooleanField()
+    is_recurring = serializers.BooleanField()
+    email = serializers.EmailField(required=False, allow_blank=True)
+    receipt_json = serializers.CharField(required=False, allow_null=True)
+    receipt = serializers.JSONField(required=False, allow_null=True)
+    shp = serializers.DictField(child=serializers.CharField(), required=False, allow_null=True)
+
+
+class MobileCheckoutResponseSerializer(serializers.Serializer):
+    provider = serializers.CharField()
+    payment = PaymentSerializer()
+    sdk = RobokassaSdkParamsSerializer()

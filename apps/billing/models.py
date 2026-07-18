@@ -158,6 +158,10 @@ class Payment(models.Model):
         FAILED = "failed", "Ошибка"
         CANCELLED = "cancelled", "Отменён"
 
+    class Channel(models.TextChoices):
+        WEB = "web", "Web / Desktop"
+        MOBILE_SDK = "mobile_sdk", "Mobile SDK"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -184,6 +188,12 @@ class Payment(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
+    )
+    channel = models.CharField(
+        "Канал",
+        max_length=20,
+        choices=Channel.choices,
+        default=Channel.WEB,
     )
     description = models.CharField("Описание", max_length=255, blank=True, default="")
     checkout_url = models.TextField("Checkout URL", blank=True, default="")

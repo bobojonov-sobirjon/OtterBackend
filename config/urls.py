@@ -22,6 +22,7 @@ api_v1_patterns = [
     path('', include(('apps.accounts.urls', 'accounts'), namespace='accounts')),
     path('', include(('apps.planner.urls', 'planner'), namespace='planner')),
     path('', include(('apps.billing.urls', 'billing'), namespace='billing')),
+    path('mobile/', include(('apps.billing.mobile_urls', 'billing_mobile'), namespace='billing_mobile')),
 ]
 
 urlpatterns = [

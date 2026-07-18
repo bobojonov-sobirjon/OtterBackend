@@ -753,7 +753,7 @@ Refresh-токен недействителен или просрочен.
 ## 5. Этап 3 — Календарь, Матрица, Помодоро
 
 > **Frontend (Pomodoro):** [POMODORO_BEGIN.md](./POMODORO_BEGIN.md) (быстрый старт) · [POMODORO_FRONTEND.md](./POMODORO_FRONTEND.md) (полный гайд)  
-> **Frontend (Premium / Robokassa):** [PAYMENT_FRONTEND.md](./PAYMENT_FRONTEND.md)
+> **Frontend (Premium / Robokassa):** [PAYMENT_FRONTEND.md](./PAYMENT_FRONTEND.md) (web/desktop) · [PAYMENT_MOBILE_SDK.md](./PAYMENT_MOBILE_SDK.md) (**mobile app + Robokassa SDK**)
 
 
 ---
@@ -1325,6 +1325,10 @@ GET /api/v1/sounds/?category=work_background
 ```
 
 ---
+
+> **Mobile app (Robokassa SDK):** alohida prefix — `/api/v1/mobile/premium/...`  
+> To‘liq hujjat: [PAYMENT_MOBILE_SDK.md](./PAYMENT_MOBILE_SDK.md)  
+> Quyidagi §6.6–6.13 — **web va desktop** uchun (`/api/v1/premium/...`).
 
 ### 6.6 Premium — Tariffs
 

@@ -54,11 +54,12 @@ class PaymentAdmin(admin.ModelAdmin):
         "tariff",
         "amount",
         "kind",
+        "channel",
         "status",
         "paid_at",
         "created_at",
     )
-    list_filter = ("status", "kind")
+    list_filter = ("status", "kind", "channel")
     search_fields = ("invoice_id", "user__email")
     raw_id_fields = ("user", "tariff")
     readonly_fields = ("checkout_url", "raw_result", "created_at", "updated_at")

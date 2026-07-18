@@ -90,7 +90,7 @@ def start_promo(*, user, tariff: Tariff, consent: RecurringConsent | None = None
 
 
 @transaction.atomic
-def create_checkout_payment(
+def _prepare_checkout_payment(
     *,
     user,
     tariff: Tariff,
@@ -98,8 +98,9 @@ def create_checkout_payment(
     offer_version: str = "",
     ip_address: str | None = None,
     user_agent: str = "",
-) -> Payment:
-    # Recurring=true только если Robokassa одобрила услугу (иначе код ошибки 34).
+    channel: str = Payment.Channel.WEB,
+) -> tuple[Payment, bool]:
+    """Создаёт pending-платёж. Возвращает (payment, use_robokassa_recurring)."""
     use_robokassa_recurring = bool(tariff.is_recurring and robokassa.recurring_enabled())
 
     if use_robokassa_recurring:
@@ -113,7 +114,6 @@ def create_checkout_payment(
             user_agent=user_agent,
         )
     elif tariff.is_recurring and recurring_consent:
-        # Сохраняем согласие заранее — пригодится после подключения рекуррентов.
         record_consent(
             user=user,
             tariff=tariff,
@@ -125,7 +125,6 @@ def create_checkout_payment(
     invoice_id = _next_invoice_id()
     kind = Payment.Kind.INITIAL if use_robokassa_recurring else Payment.Kind.ONE_TIME
     description = f"Otter Premium: {tariff.title}"
-    # Shp_* complicates first tests; enable later with receipt if needed.
     shp = None
 
     payment = Payment.objects.create(
@@ -137,12 +136,41 @@ def create_checkout_payment(
         kind=kind,
         status=Payment.Status.PENDING,
         description=description,
+        channel=channel,
     )
 
+    sub = get_or_create_subscription(user)
+    sub.tariff = tariff
+    sub.recurring_enabled = use_robokassa_recurring
+    sub.save(update_fields=["tariff", "recurring_enabled", "updated_at"])
+
+    return payment, use_robokassa_recurring
+
+
+@transaction.atomic
+def create_checkout_payment(
+    *,
+    user,
+    tariff: Tariff,
+    recurring_consent: bool = False,
+    offer_version: str = "",
+    ip_address: str | None = None,
+    user_agent: str = "",
+) -> Payment:
+    payment, use_robokassa_recurring = _prepare_checkout_payment(
+        user=user,
+        tariff=tariff,
+        recurring_consent=recurring_consent,
+        offer_version=offer_version,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        channel=Payment.Channel.WEB,
+    )
+    shp = None
     checkout_url = robokassa.build_checkout_url(
         out_sum=payment.amount,
-        invoice_id=invoice_id,
-        description=description,
+        invoice_id=payment.invoice_id,
+        description=payment.description,
         tariff=tariff,
         recurring=use_robokassa_recurring,
         user_email=getattr(user, "email", None),
@@ -150,13 +178,39 @@ def create_checkout_payment(
     )
     payment.checkout_url = checkout_url
     payment.save(update_fields=["checkout_url", "updated_at"])
-
-    sub = get_or_create_subscription(user)
-    sub.tariff = tariff
-    sub.recurring_enabled = use_robokassa_recurring
-    sub.save(update_fields=["tariff", "recurring_enabled", "updated_at"])
-
     return payment
+
+
+@transaction.atomic
+def create_mobile_sdk_payment(
+    *,
+    user,
+    tariff: Tariff,
+    recurring_consent: bool = False,
+    offer_version: str = "",
+    ip_address: str | None = None,
+    user_agent: str = "",
+) -> tuple[Payment, dict]:
+    """Платёж для Robokassa Mobile SDK — параметры + подпись, без checkout_url."""
+    payment, use_robokassa_recurring = _prepare_checkout_payment(
+        user=user,
+        tariff=tariff,
+        recurring_consent=recurring_consent,
+        offer_version=offer_version,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        channel=Payment.Channel.MOBILE_SDK,
+    )
+    sdk_params = robokassa.build_sdk_params(
+        out_sum=payment.amount,
+        invoice_id=payment.invoice_id,
+        description=payment.description,
+        tariff=tariff,
+        recurring=use_robokassa_recurring,
+        user_email=getattr(user, "email", None),
+        shp=None,
+    )
+    return payment, sdk_params
 
 
 @transaction.atomic

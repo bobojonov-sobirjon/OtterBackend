@@ -36,6 +36,10 @@ def recurring_enabled() -> bool:
     return bool(getattr(settings, "ROBOKASSA_RECURRING_ENABLED", False))
 
 
+def is_test_mode() -> bool:
+    return _cfg("ROBOKASSA_IS_TEST", "1") in ("1", "true", "True", "yes")
+
+
 def build_receipt(tariff, quantity: int = 1) -> dict[str, Any]:
     """Номенклатура для фискализации (мать и дочь — одинаково по смыслу)."""
     return {
@@ -150,13 +154,58 @@ def build_checkout_url(
         params["Recurring"] = "true"
     if user_email:
         params["Email"] = user_email
-    if _cfg("ROBOKASSA_IS_TEST", "1") in ("1", "true", "True", "yes"):
+    if is_test_mode():
         params["IsTest"] = "1"
     if shp:
         params.update(shp)
 
     base = _cfg("ROBOKASSA_PAYMENT_URL", "https://auth.robokassa.ru/Merchant/Index.aspx")
     return f"{base}?{urlencode(params)}"
+
+
+def build_sdk_params(
+    *,
+    out_sum: Decimal,
+    invoice_id: int,
+    description: str,
+    tariff,
+    recurring: bool = False,
+    user_email: str | None = None,
+    shp: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """
+    Параметры для Robokassa Mobile SDK (Android / iOS).
+    Пароли Password1/Password2 клиенту не отдаём — только SignatureValue с бэкенда.
+    """
+    if not is_configured():
+        raise RobokassaError("Robokassa credentials are not configured in .env")
+
+    send_receipt = bool(getattr(settings, "ROBOKASSA_SEND_RECEIPT", False))
+    receipt_obj = build_receipt(tariff) if send_receipt else None
+    receipt = receipt_json(tariff) if send_receipt else None
+    out = f"{Decimal(out_sum):.2f}"
+    signature = payment_signature(out, invoice_id, receipt=receipt, shp=shp)
+
+    params: dict[str, Any] = {
+        "merchant_login": _cfg("ROBOKASSA_MERCHANT_LOGIN"),
+        "invoice_id": invoice_id,
+        "out_sum": out,
+        "description": description[:100],
+        "signature_value": signature,
+        "culture": "ru",
+        "encoding": "utf-8",
+        "is_test": is_test_mode(),
+        "is_recurring": bool(recurring),
+    }
+    if user_email:
+        params["email"] = user_email
+    if receipt:
+        params["receipt_json"] = receipt
+    if receipt_obj:
+        params["receipt"] = receipt_obj
+    if shp:
+        params["shp"] = shp
+    return params
 
 
 def charge_recurring(
