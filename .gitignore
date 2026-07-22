@@ -129,6 +129,9 @@ celerybeat.pid
 
 # Environments
 .env
+*serviceAccountKey*.json
+*firebase-adminsdk*.json
+firebase-credentials*.json
 .venv
 env/
 venv/

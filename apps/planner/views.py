@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
@@ -10,25 +10,45 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.pomodoro.models import PomodoroSession, PomodoroSettings, Sound
+
 from .models import (
     AppSettings,
+    FAQEntry,
+    FCMDevice,
     LegalDocument,
     MatrixBlockSetting,
     Task,
+    TaskAttachment,
 )
-from apps.pomodoro.models import PomodoroSession, PomodoroSettings, Sound
 from .serializers import (
     AppSettingsSerializer,
+    FAQEntrySerializer,
+    FCMDeviceSerializer,
     HelpRequestSerializer,
     LegalDocumentSerializer,
     MatrixBlockSettingSerializer,
     PomodoroSessionSerializer,
     PomodoroSettingsSerializer,
     PomodoroStateUpdateSerializer,
+    ReminderSnoozeSerializer,
     SoundSerializer,
+    TaskAttachmentSerializer,
     TaskSerializer,
     date_range_for_view,
     split_tasks_by_default_groups,
+)
+from .services import (
+    ack_reminder,
+    activate_user_timezone,
+    apply_matrix_filters,
+    calendar_task_queryset,
+    complete_task_with_repeat,
+    delete_task,
+    pending_reminders_queryset,
+    reassign_matrix_tasks,
+    snooze_reminder,
+    split_calendar_tasks,
 )
 
 
@@ -42,6 +62,7 @@ def get_or_create_user_settings(user):
         user=user,
         defaults={
             "bottom_tabs": ["tasks", "calendar", "matrix", "pomodoro", "settings"],
+            "timezone": "Europe/Moscow",
             "notification_sound": _default_sound("default", Sound.Category.NOTIFICATION),
             "completion_sound": _default_sound("default", Sound.Category.COMPLETION),
         },
@@ -73,7 +94,12 @@ def ensure_default_matrix_settings(user):
         MatrixBlockSetting.objects.get_or_create(
             user=user,
             block=block,
-            defaults={"title": title, "allowed_priorities": [], "date_filter": ""},
+            defaults={
+                "title": title,
+                "allowed_priorities": [],
+                "date_filters": [],
+                "date_filter": "",
+            },
         )
 
 
@@ -83,36 +109,36 @@ def ensure_default_matrix_settings(user):
         summary="Список задач",
         description=(
             "Возвращает список задач текущего пользователя. "
-            "Поддерживаются фильтры `search`, `is_completed`, `matrix_block`."
+            "Фильтры: `search`, `is_completed`, `matrix_block`. "
+            "В каждой задаче есть `list_key` (overdue/today/…) — для открытия из поиска."
         ),
     ),
-    retrieve=extend_schema(
-        tags=["Задачи"],
-        summary="Детальная информация по задаче",
-        description="Возвращает полную информацию по одной задаче пользователя.",
-    ),
+    retrieve=extend_schema(tags=["Задачи"], summary="Детальная информация по задаче"),
     create=extend_schema(
         tags=["Задачи"],
         summary="Создание задачи",
         description=(
-            "Создаёт новую задачу. Если не передан `due_at`, задача попадёт в группу "
-            "`Без срока`. Поддерживается загрузка изображения задачи."
+            "Создаёт задачу. `is_all_day=true` — дата без времени (верхний блок календаря). "
+            "Повтор: `repeat_unit` + `repeat_interval`. Вложения — отдельным API."
         ),
     ),
-    update=extend_schema(
-        tags=["Задачи"],
-        summary="Полное обновление задачи",
-        description="Полностью заменяет данные существующей задачи.",
-    ),
-    partial_update=extend_schema(
-        tags=["Задачи"],
-        summary="Частичное обновление задачи",
-        description="Обновляет только переданные поля задачи.",
-    ),
+    update=extend_schema(tags=["Задачи"], summary="Полное обновление задачи"),
+    partial_update=extend_schema(tags=["Задачи"], summary="Частичное обновление задачи"),
     destroy=extend_schema(
         tags=["Задачи"],
         summary="Удаление задачи",
-        description="Удаляет задачу пользователя (аналог свайпа влево в мобильном приложении).",
+        description=(
+            "По умолчанию удаляет только это вхождение. "
+            "Для серии: `?scope=series` или body `{\"scope\": \"series\"}`."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="scope",
+                type=str,
+                required=False,
+                description="this (default) | series",
+            ),
+        ],
     ),
 )
 class TaskViewSet(viewsets.ModelViewSet):
@@ -120,12 +146,24 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.user and request.user.is_authenticated:
+            activate_user_timezone(request.user)
+
     def get_queryset(self):
-        """Возвращает задачи текущего пользователя с фильтрами поиска и статуса."""
-        queryset = Task.objects.filter(user=self.request.user).order_by("is_completed", "due_at", "-created_at")
+        queryset = (
+            Task.objects.filter(user=self.request.user)
+            .prefetch_related(
+                Prefetch("attachments", queryset=TaskAttachment.objects.order_by("-created_at"))
+            )
+            .order_by("is_completed", "due_at", "-created_at")
+        )
         search = self.request.query_params.get("search")
         if search:
-            queryset = queryset.filter(Q(title__icontains=search) | Q(description__icontains=search))
+            queryset = queryset.filter(
+                Q(title__icontains=search) | Q(description__icontains=search)
+            )
         is_completed = self.request.query_params.get("is_completed")
         if is_completed in {"true", "false"}:
             queryset = queryset.filter(is_completed=(is_completed == "true"))
@@ -134,24 +172,55 @@ class TaskViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(matrix_block=matrix_block)
         return queryset
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["now"] = timezone.localtime()
+        return ctx
+
     def perform_create(self, serializer):
-        """Привязывает создаваемую задачу к текущему пользователю."""
         serializer.save(user=self.request.user)
+        reassign_matrix_tasks(self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
+        reassign_matrix_tasks(self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        task = self.get_object()
+        scope = request.query_params.get("scope") or request.data.get("scope") or "this"
+        if scope not in {"this", "series"}:
+            return Response(
+                {"scope": ["Допустимо: this | series."]},
+                status=400,
+            )
+        result = delete_task(task, scope=scope)
+        return Response(result, status=200)
 
     @extend_schema(
         tags=["Задачи"],
         summary="Группировка задач по системным спискам",
         description=(
-            "Возвращает задачи в группах `Просрочено`, `Сегодня`, `Завтра`, `Позже`, "
-            "`Без срока`, `Выполнено` с количеством задач в каждой группе."
+            "Группы: `Просрочено`, `Сегодня`, `Завтра`, `Позже`, `Без срока`, `Выполнено`. "
+            "Учитывает timezone пользователя из настроек."
         ),
-        responses={200: OpenApiResponse(description="Группы задач успешно сформированы.")},
     )
     @action(detail=False, methods=["get"], url_path="grouped")
     def grouped(self, request):
-        """Возвращает задачи в формате групп по умолчанию из ТЗ."""
-        tasks = list(Task.objects.filter(user=request.user))
-        grouped = split_tasks_by_default_groups(tasks)
+        activate_user_timezone(request.user)
+        now = timezone.localtime()
+        tasks = list(
+            Task.objects.filter(user=request.user).prefetch_related("attachments")
+        )
+        grouped = split_tasks_by_default_groups(tasks, now=now)
+        settings_obj = get_or_create_user_settings(request.user)
+        visibility = {
+            "overdue": settings_obj.show_overdue,
+            "today": settings_obj.show_today,
+            "tomorrow": settings_obj.show_tomorrow,
+            "later": settings_obj.show_later,
+            "no_deadline": settings_obj.show_no_deadline,
+            "completed": settings_obj.show_completed,
+        }
         titles = {
             "overdue": "Просрочено",
             "today": "Сегодня",
@@ -160,42 +229,97 @@ class TaskViewSet(viewsets.ModelViewSet):
             "no_deadline": "Без срока",
             "completed": "Выполнено",
         }
-        data = [
-            {
-                "key": key,
-                "title": titles[key],
-                "count": len(items),
-                "tasks": TaskSerializer(items, many=True, context={"request": request}).data,
-            }
-            for key, items in grouped.items()
-        ]
+        data = []
+        for key, items in grouped.items():
+            if not visibility.get(key, True):
+                continue
+            data.append(
+                {
+                    "key": key,
+                    "title": titles[key],
+                    "count": len(items),
+                    "tasks": TaskSerializer(
+                        items, many=True, context={"request": request, "now": now}
+                    ).data,
+                }
+            )
         return Response(data, status=200)
 
     @extend_schema(
         tags=["Задачи"],
         summary="Отметить задачу выполненной",
-        description="Устанавливает статус выполнения задачи (аналог свайпа вправо).",
+        description=(
+            "Ставит статус выполнено. Если задан повтор (`repeat_unit` ≠ none), "
+            "автоматически создаётся следующее вхождение. "
+            "Ответ: `{ task, next_task }`."
+        ),
     )
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
-        """Ставит задаче отметку выполнения как при свайпе вправо в мобильном приложении."""
         task = self.get_object()
-        task.mark_completed(True)
-        task.save(update_fields=["is_completed", "completed_at", "updated_at"])
-        return Response(TaskSerializer(task, context={"request": request}).data, status=200)
+        completed, next_task = complete_task_with_repeat(task)
+        ctx = {"request": request, "now": timezone.localtime()}
+        # Backward-compatible: task fields at root + optional next_task
+        payload = TaskSerializer(completed, context=ctx).data
+        payload["next_task"] = (
+            TaskSerializer(next_task, context=ctx).data if next_task else None
+        )
+        return Response(payload, status=200)
 
-    @extend_schema(
-        tags=["Задачи"],
-        summary="Снять отметку выполнения",
-        description="Переводит задачу обратно в активное состояние.",
-    )
+    @extend_schema(tags=["Задачи"], summary="Снять отметку выполнения")
     @action(detail=True, methods=["post"], url_path="uncomplete")
     def uncomplete(self, request, pk=None):
-        """Снимает отметку выполнения, чтобы вернуть задачу в активные списки."""
         task = self.get_object()
         task.mark_completed(False)
         task.save(update_fields=["is_completed", "completed_at", "updated_at"])
-        return Response(TaskSerializer(task, context={"request": request}).data, status=200)
+        return Response(
+            TaskSerializer(task, context={"request": request, "now": timezone.localtime()}).data,
+            status=200,
+        )
+
+    @extend_schema(
+        tags=["Задачи / Вложения"],
+        summary="Список вложений задачи",
+        responses={200: TaskAttachmentSerializer(many=True)},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="attachments")
+    def attachments(self, request, pk=None):
+        task = self.get_object()
+        if request.method.lower() == "get":
+            qs = task.attachments.all()
+            return Response(
+                TaskAttachmentSerializer(qs, many=True, context={"request": request}).data,
+                status=200,
+            )
+
+        upload = request.FILES.get("file") or request.FILES.get("attachment")
+        if not upload:
+            return Response({"file": ["Файл обязателен (multipart field: file)."]}, status=400)
+        att = TaskAttachment.objects.create(
+            task=task,
+            file=upload,
+            original_name=getattr(upload, "name", "") or "",
+            content_type=getattr(upload, "content_type", "") or "",
+            size=int(getattr(upload, "size", 0) or 0),
+        )
+        return Response(
+            TaskAttachmentSerializer(att, context={"request": request}).data,
+            status=201,
+        )
+
+    @extend_schema(tags=["Задачи / Вложения"], summary="Удалить вложение")
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"attachments/(?P<attachment_id>[^/.]+)",
+    )
+    def delete_attachment(self, request, pk=None, attachment_id=None):
+        task = self.get_object()
+        att = get_object_or_404(TaskAttachment, id=attachment_id, task=task)
+        if att.file:
+            att.file.delete(save=False)
+        att.delete()
+        return Response(status=204)
 
 
 class CalendarAPIView(APIView):
@@ -205,30 +329,17 @@ class CalendarAPIView(APIView):
         tags=["Календарь"],
         summary="Задачи для календарного представления",
         description=(
-            "Возвращает задачи в диапазоне выбранного вида календаря: "
-            "`day`, `week`, `month`, `year`."
+            "Возвращает задачи в диапазоне `day|week|month|year`. "
+            "Разделяет `all_day_tasks` (дата без времени) и `timed_tasks`. "
+            "Задачи БЕЗ даты не попадают в календарь."
         ),
         parameters=[
-            OpenApiParameter(
-                name="view",
-                type=str,
-                required=True,
-                description="Режим календаря: day | week | month | year.",
-            ),
-            OpenApiParameter(
-                name="date",
-                type=str,
-                required=True,
-                description="Опорная дата в формате YYYY-MM-DD.",
-            ),
+            OpenApiParameter(name="view", type=str, required=True, description="day|week|month|year"),
+            OpenApiParameter(name="date", type=str, required=True, description="YYYY-MM-DD"),
         ],
-        responses={
-            200: OpenApiResponse(description="Диапазон и задачи для календаря успешно получены."),
-            400: OpenApiResponse(description="Некорректные параметры `view` или `date`."),
-        },
     )
     def get(self, request):
-        """Отдает задачи в выбранном диапазоне календаря для отображения в UI."""
+        activate_user_timezone(request.user)
         view_mode = request.query_params.get("view", "day")
         date_str = request.query_params.get("date")
         if not date_str:
@@ -243,20 +354,22 @@ class CalendarAPIView(APIView):
         start_dt = timezone.make_aware(datetime.combine(start, datetime.min.time()))
         end_dt = timezone.make_aware(datetime.combine(end, datetime.min.time()))
 
-        tasks = Task.objects.filter(
-            user=request.user,
-        ).filter(
-            Q(start_at__gte=start_dt, start_at__lt=end_dt)
-            | Q(due_at__gte=start_dt, due_at__lt=end_dt)
-            | Q(start_at__isnull=True, due_at__isnull=True)
+        tasks = list(
+            calendar_task_queryset(request.user, start_dt, end_dt).prefetch_related("attachments")
         )
+        all_day, timed = split_calendar_tasks(tasks)
+        ctx = {"request": request, "now": timezone.localtime()}
         return Response(
             {
                 "view": view_mode,
                 "date": date_str,
                 "range_start": start.isoformat(),
                 "range_end": end.isoformat(),
-                "tasks": TaskSerializer(tasks, many=True, context={"request": request}).data,
+                "timezone": str(timezone.get_current_timezone()),
+                "all_day_tasks": TaskSerializer(all_day, many=True, context=ctx).data,
+                "timed_tasks": TaskSerializer(timed, many=True, context=ctx).data,
+                # backwards-compatible flat list
+                "tasks": TaskSerializer(tasks, many=True, context=ctx).data,
             },
             status=200,
         )
@@ -269,27 +382,34 @@ class MatrixAPIView(APIView):
         tags=["Матрица Эйзенхауэра"],
         summary="Получить блоки матрицы с задачами",
         description=(
-            "Возвращает 4 блока матрицы Эйзенхауэра и задачи, "
-            "распределённые по этим блокам."
+            "Возвращает 4 блока. Фильтры `allowed_priorities` и `date_filter` "
+            "из настроек блока применяются на сервере."
         ),
     )
     def get(self, request):
-        """Возвращает 4 блока матрицы и задачи в каждом блоке."""
+        activate_user_timezone(request.user)
         ensure_default_matrix_settings(request.user)
+        reassign_matrix_tasks(request.user)
+        now = timezone.localtime()
         settings_qs = MatrixBlockSetting.objects.filter(user=request.user).order_by("id")
-        tasks = Task.objects.filter(user=request.user, is_completed=False)
+        base_tasks = Task.objects.filter(user=request.user, is_completed=False)
 
         payload = []
         for block_setting in settings_qs:
-            block_tasks = tasks.filter(matrix_block=block_setting.block)
+            block_tasks = base_tasks.filter(matrix_block=block_setting.block)
+            block_tasks = apply_matrix_filters(block_tasks, block_setting, now=now)
+            block_tasks = block_tasks.prefetch_related("attachments")
             payload.append(
                 {
                     "block": block_setting.block,
                     "title": block_setting.title,
                     "allowed_priorities": block_setting.allowed_priorities,
+                    "date_filters": block_setting.date_filters,
                     "date_filter": block_setting.date_filter,
                     "count": block_tasks.count(),
-                    "tasks": TaskSerializer(block_tasks, many=True, context={"request": request}).data,
+                    "tasks": TaskSerializer(
+                        block_tasks, many=True, context={"request": request, "now": now}
+                    ).data,
                 }
             )
         return Response(payload, status=200)
@@ -298,13 +418,8 @@ class MatrixAPIView(APIView):
 class MatrixBlockSettingsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(
-        tags=["Матрица Эйзенхауэра"],
-        summary="Получить настройки блоков матрицы",
-        description="Возвращает пользовательские настройки всех четырёх блоков матрицы.",
-    )
+    @extend_schema(tags=["Матрица Эйзенхауэра"], summary="Получить настройки блоков матрицы")
     def get(self, request):
-        """Возвращает пользовательские настройки всех блоков матрицы."""
         ensure_default_matrix_settings(request.user)
         items = MatrixBlockSetting.objects.filter(user=request.user).order_by("id")
         return Response(MatrixBlockSettingSerializer(items, many=True).data, status=200)
@@ -313,12 +428,12 @@ class MatrixBlockSettingsAPIView(APIView):
         tags=["Матрица Эйзенхауэра"],
         summary="Обновить настройки блока матрицы",
         description=(
-            "Обновляет один блок матрицы по полю `block`. "
-            "Можно изменить название, приоритеты и фильтр по дате."
+            "Обновляет блок по `block`. "
+            "`date_filters`: список any|overdue|today|tomorrow|later|no_deadline|with_deadline. "
+            "`allowed_priorities`: список low|medium|high|critical."
         ),
     )
     def patch(self, request):
-        """Обновляет один блок матрицы по его коду block."""
         ensure_default_matrix_settings(request.user)
         block = request.data.get("block")
         if not block:
@@ -327,35 +442,202 @@ class MatrixBlockSettingsAPIView(APIView):
         serializer = MatrixBlockSettingSerializer(item, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data, status=200)
+        changed = reassign_matrix_tasks(request.user)
+        payload = dict(serializer.data)
+        payload["reassigned_tasks"] = changed
+        return Response(payload, status=200)
 
+
+class RemindersDueAPIView(APIView):
+    """Pending task reminders for client local notifications / polling."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Напоминания, которые пора показать",
+        description=(
+            "Задачи с `reminder_at <= now` (или `?until=`), ещё не ack. "
+            "Клиент показывает notification, затем вызывает ack."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="until",
+                type=str,
+                required=False,
+                description="ISO datetime. По умолчанию — сейчас.",
+            ),
+        ],
+    )
+    def get(self, request):
+        activate_user_timezone(request.user)
+        until = timezone.now()
+        until_raw = request.query_params.get("until")
+        if until_raw:
+            try:
+                until = datetime.fromisoformat(until_raw.replace("Z", "+00:00"))
+                if timezone.is_naive(until):
+                    until = timezone.make_aware(until)
+            except ValueError:
+                return Response({"until": ["Некорректный ISO datetime."]}, status=400)
+        qs = pending_reminders_queryset(request.user, until=until).prefetch_related("attachments")
+        return Response(
+            {
+                "until": until.isoformat(),
+                "count": qs.count(),
+                "tasks": TaskSerializer(
+                    qs, many=True, context={"request": request, "now": timezone.localtime()}
+                ).data,
+            },
+            status=200,
+        )
+
+
+class ReminderAckAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Подтвердить показ напоминания",
+        description="Ставит `reminder_delivered_at`, чтобы reminder больше не приходил в due-список.",
+    )
+    def post(self, request, task_id: int):
+        task = get_object_or_404(Task, id=task_id, user=request.user)
+        task = ack_reminder(task)
+        return Response(
+            TaskSerializer(
+                task, context={"request": request, "now": timezone.localtime()}
+            ).data,
+            status=200,
+        )
+
+
+class ReminderSnoozeAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Отложить напоминание",
+        request=ReminderSnoozeSerializer,
+    )
+    def post(self, request, task_id: int):
+        """Переносит reminder_at на указанное количество минут."""
+        serializer = ReminderSnoozeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        task = get_object_or_404(Task, id=task_id, user=request.user)
+        task = snooze_reminder(task, serializer.validated_data["minutes"])
+        return Response(
+            TaskSerializer(
+                task,
+                context={"request": request, "now": timezone.localtime()},
+            ).data,
+            status=200,
+        )
+
+
+class ReminderCompleteAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Завершить задачу из уведомления",
+    )
+    def post(self, request, task_id: int):
+        """Завершает задачу и создаёт следующее повторение при необходимости."""
+        task = get_object_or_404(Task, id=task_id, user=request.user)
+        completed, next_task = complete_task_with_repeat(task)
+        context = {"request": request, "now": timezone.localtime()}
+        payload = TaskSerializer(completed, context=context).data
+        payload["next_task"] = (
+            TaskSerializer(next_task, context=context).data if next_task else None
+        )
+        return Response(payload, status=200)
+
+
+class FCMDeviceListCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Устройства / Push"],
+        summary="Список устройств пользователя",
+        responses={200: FCMDeviceSerializer(many=True)},
+    )
+    def get(self, request):
+        """Возвращает устройства, зарегистрированные для FCM push."""
+        devices = FCMDevice.objects.filter(user=request.user)
+        return Response(FCMDeviceSerializer(devices, many=True).data, status=200)
+
+    @extend_schema(
+        tags=["Устройства / Push"],
+        summary="Зарегистрировать или обновить FCM устройство",
+        request=FCMDeviceSerializer,
+        responses={200: FCMDeviceSerializer, 201: FCMDeviceSerializer},
+    )
+    def post(self, request):
+        """Upsert устройства по user+device_id и обновление FCM token."""
+        serializer = FCMDeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        token = data["token"]
+        device_id = data["device_id"]
+
+        # One FCM token belongs to one current account/device record.
+        FCMDevice.objects.filter(token=token).exclude(user=request.user).delete()
+        device, created = FCMDevice.objects.update_or_create(
+            user=request.user,
+            device_id=device_id,
+            defaults={
+                "token": token,
+                "name": data.get("name", ""),
+                "platform": data["platform"],
+                "app_version": data.get("app_version", ""),
+                "is_active": True,
+                "last_seen_at": timezone.now(),
+            },
+        )
+        return Response(
+            FCMDeviceSerializer(device).data,
+            status=201 if created else 200,
+        )
+
+
+class FCMDeviceDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Устройства / Push"],
+        summary="Отключить устройство",
+    )
+    def delete(self, request, device_id: int):
+        """Удаляет FCM token устройства текущего пользователя."""
+        device = get_object_or_404(FCMDevice, id=device_id, user=request.user)
+        device.delete()
+        return Response(status=204)
 
 class AppSettingsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(
-        tags=["Настройки приложения"],
-        summary="Получить настройки приложения",
-        description="Возвращает текущие пользовательские настройки интерфейса и уведомлений.",
-    )
+    @extend_schema(tags=["Настройки приложения"], summary="Получить настройки приложения")
     def get(self, request):
-        """Отдает пользовательские настройки, которые управляют вкладками и системными параметрами."""
         settings_obj = get_or_create_user_settings(request.user)
-        return Response(AppSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
+        return Response(
+            AppSettingsSerializer(settings_obj, context={"request": request}).data,
+            status=200,
+        )
 
     @extend_schema(
         tags=["Настройки приложения"],
         summary="Обновить настройки приложения",
-        description="Частично обновляет настройки пользователя (звук, вкладки, язык и т.д.).",
+        description="Язык, timezone (IANA), звуки, вибрация, видимость списков, вкладки.",
     )
     def patch(self, request):
-        """Обновляет только переданные поля настроек приложения."""
         settings_obj = get_or_create_user_settings(request.user)
         serializer = AppSettingsSerializer(
             settings_obj, data=request.data, partial=True, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        activate_user_timezone(request.user)
         return Response(serializer.data, status=200)
 
 
@@ -365,12 +647,12 @@ class SettingsStubActionAPIView(APIView):
     @extend_schema(
         tags=["Настройки приложения"],
         summary="Заглушка для пунктов в разработке",
-        description="Единый эндпоинт для пунктов меню, которые ещё находятся в разработке.",
     )
     def post(self, request):
-        """Возвращает единый ответ для пунктов настроек, которые пока в разработке."""
-        return Response({"detail": "Уже разрабатываем, скоро будет готово :)"},
-                        status=status.HTTP_202_ACCEPTED)
+        return Response(
+            {"detail": "Уже разрабатываем, скоро будет готово :)"},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class SoundCatalogAPIView(APIView):
@@ -379,53 +661,43 @@ class SoundCatalogAPIView(APIView):
     @extend_schema(
         tags=["Звуки"],
         summary="Каталог звуков",
-        description=(
-            "Возвращает список звуков с emoji и URL аудиофайла. "
-            "Фильтр `category`: timer_end | work_background | notification | completion."
-        ),
         parameters=[
-            OpenApiParameter(
-                name="category",
-                type=str,
-                required=False,
-                description="Категория звуков. Без параметра — все категории.",
-            ),
+            OpenApiParameter(name="category", type=str, required=False),
         ],
     )
     def get(self, request):
-        """Каталог звуков для выбора в помодоро и настройках уведомлений."""
         queryset = Sound.objects.filter(is_active=True).order_by("category", "sort_order", "key")
         category = request.query_params.get("category")
         if category:
             if category not in dict(Sound.Category.choices):
                 return Response(
-                    {"category": [f"Допустимые значения: {', '.join(dict(Sound.Category.choices))}."]},
+                    {
+                        "category": [
+                            f"Допустимые значения: {', '.join(dict(Sound.Category.choices))}."
+                        ]
+                    },
                     status=400,
                 )
             queryset = queryset.filter(category=category)
-        return Response(SoundSerializer(queryset, many=True, context={"request": request}).data, status=200)
+        return Response(
+            SoundSerializer(queryset, many=True, context={"request": request}).data,
+            status=200,
+        )
 
 
 class PomodoroSettingsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(
-        tags=["Помодоро"],
-        summary="Получить настройки помодоро",
-        description="Возвращает параметры таймера: длительность, звук и режим экрана блокировки.",
-    )
+    @extend_schema(tags=["Помодоро"], summary="Получить настройки помодоро")
     def get(self, request):
-        """Возвращает параметры таймера помодоро текущего пользователя."""
         settings_obj = get_or_create_pomodoro_settings(request.user)
-        return Response(PomodoroSettingsSerializer(settings_obj, context={"request": request}).data, status=200)
+        return Response(
+            PomodoroSettingsSerializer(settings_obj, context={"request": request}).data,
+            status=200,
+        )
 
-    @extend_schema(
-        tags=["Помодоро"],
-        summary="Обновить настройки помодоро",
-        description="Обновляет пользовательские параметры таймера помодоро.",
-    )
+    @extend_schema(tags=["Помодоро"], summary="Обновить настройки помодоро")
     def patch(self, request):
-        """Обновляет длительность, звук и параметры отображения таймера."""
         settings_obj = get_or_create_pomodoro_settings(request.user)
         serializer = PomodoroSettingsSerializer(
             settings_obj, data=request.data, partial=True, context={"request": request}
@@ -438,23 +710,13 @@ class PomodoroSettingsAPIView(APIView):
 class PomodoroSessionAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(
-        tags=["Помодоро"],
-        summary="Список сессий помодоро",
-        description="Возвращает историю созданных сессий помодоро для текущего пользователя.",
-    )
+    @extend_schema(tags=["Помодоро"], summary="Список сессий помодоро")
     def get(self, request):
-        """Возвращает историю сессий помодоро пользователя."""
         sessions = PomodoroSession.objects.filter(user=request.user).select_related("task")
         return Response(PomodoroSessionSerializer(sessions, many=True).data, status=200)
 
-    @extend_schema(
-        tags=["Помодоро"],
-        summary="Создать сессию помодоро",
-        description="Создаёт новую сессию помодоро с выбранной задачей и длительностью.",
-    )
+    @extend_schema(tags=["Помодоро"], summary="Создать сессию помодоро")
     def post(self, request):
-        """Создает новую сессию помодоро с выбранной задачей и длительностью."""
         serializer = PomodoroSessionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         session = serializer.save(user=request.user)
@@ -464,16 +726,8 @@ class PomodoroSessionAPIView(APIView):
 class PomodoroSessionStateAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(
-        tags=["Помодоро"],
-        summary="Изменить состояние сессии",
-        description=(
-            "Переводит сессию в одно из состояний: `running`, `paused`, "
-            "`stopped`, `completed`."
-        ),
-    )
+    @extend_schema(tags=["Помодоро"], summary="Изменить состояние сессии")
     def post(self, request, session_id: int):
-        """Переключает состояние сессии для кнопок старт, пауза, стоп и завершение."""
         session = get_object_or_404(PomodoroSession, id=session_id, user=request.user)
         serializer = PomodoroStateUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -494,24 +748,29 @@ class HelpCenterAPIView(APIView):
 
     @extend_schema(
         tags=["Центр помощи"],
-        summary="Получить FAQ",
-        description="Возвращает базовый список часто задаваемых вопросов и ответов.",
+        summary="Получить FAQ с поиском",
+        parameters=[
+            OpenApiParameter(
+                name="search",
+                type=str,
+                required=False,
+                description="Поиск по вопросу и ответу.",
+            )
+        ],
+        responses={200: FAQEntrySerializer(many=True)},
     )
     def get(self, request):
-        """Отдает минимальный FAQ, чтобы мобильное приложение могло построить раздел помощи."""
-        data = [
-            {"question": "Как создать задачу?", "answer": "Нажмите кнопку + на главной странице."},
-            {"question": "Как работает помодоро?", "answer": "Выберите задачу, нажмите старт и работайте до сигнала."},
-        ]
-        return Response(data, status=200)
+        """Возвращает активные FAQ и фильтрует их по search/q."""
+        query = (request.query_params.get("search") or request.query_params.get("q") or "").strip()
+        items = FAQEntry.objects.filter(is_active=True)
+        if query:
+            items = items.filter(
+                Q(question__icontains=query) | Q(answer__icontains=query)
+            )
+        return Response(FAQEntrySerializer(items, many=True).data, status=200)
 
-    @extend_schema(
-        tags=["Центр помощи"],
-        summary="Отправить сообщение в поддержку",
-        description="Создаёт обращение в поддержку с текстом и опциональным скриншотом.",
-    )
+    @extend_schema(tags=["Центр помощи"], summary="Отправить сообщение в поддержку")
     def post(self, request):
-        """Принимает сообщение пользователя и скриншот для передачи в поддержку."""
         serializer = HelpRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         ticket = serializer.save(user=request.user)
@@ -521,16 +780,7 @@ class HelpCenterAPIView(APIView):
 class LegalDocumentsAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    @extend_schema(
-        tags=["Юридические документы"],
-        summary="Список юридических документов",
-        description=(
-            "Возвращает тексты документов: оферта, политика конфиденциальности, "
-            "политика возвратов и согласие на обработку персональных данных."
-        ),
-    )
+    @extend_schema(tags=["Юридические документы"], summary="Список юридических документов")
     def get(self, request):
-        """Отдает текст оферты, политики конфиденциальности и других обязательных документов."""
         docs = LegalDocument.objects.all()
         return Response(LegalDocumentSerializer(docs, many=True).data, status=200)
-

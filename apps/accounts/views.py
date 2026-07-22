@@ -17,6 +17,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from firebase_admin import auth as firebase_auth
 
 from .models import PasswordResetRequest
+from .emails import send_welcome_email
 from .serializers import (
     ChangePasswordSerializer,
     GoogleLoginSerializer,
@@ -86,6 +87,7 @@ class РегистрацияAPIView(APIView):
                 {"email": ["Пользователь с таким email уже существует"]},
                 status=400,
             )
+        send_welcome_email(user)
         tokens = _jwt_tokens_for_user(user)
         return Response({"user": ProfileSerializer(user).data, "tokens": tokens}, status=201)
 
@@ -191,6 +193,7 @@ class GoogleLoginAPIView(APIView):
         if created:
             user.set_unusable_password()
             user.save(update_fields=["password"])
+            send_welcome_email(user)
         else:
             # If user exists but names are empty, fill them from Google.
             update_fields: list[str] = []
