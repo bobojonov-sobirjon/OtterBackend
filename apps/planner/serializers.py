@@ -17,6 +17,7 @@ from .models import (
     PremiumFeatureFlag,
     Task,
     TaskAttachment,
+    UserNotification,
 )
 from .services import complete_task_with_repeat, task_group_key
 
@@ -310,6 +311,23 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             "error",
             "attempted_at",
             "sent_at",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserNotification
+        fields = (
+            "id",
+            "type",
+            "title",
+            "body",
+            "data",
+            "task",
+            "is_read",
+            "read_at",
             "created_at",
         )
         read_only_fields = fields

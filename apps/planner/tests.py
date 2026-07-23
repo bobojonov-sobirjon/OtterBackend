@@ -12,6 +12,7 @@ from .models import (
     MatrixBlockSetting,
     NotificationDelivery,
     Task,
+    UserNotification,
 )
 from .notifications import send_task_reminder
 from .services import complete_task_with_repeat, reassign_matrix_tasks, snooze_reminder
@@ -140,3 +141,60 @@ class PlannerBacklogTests(TestCase):
         self.assertEqual(delivery.status, NotificationDelivery.Status.SENT)
         self.assertEqual(delivery.message_id, "message-1")
         send_mock.assert_called_once()
+        inbox = UserNotification.objects.get(user=self.user, task=task)
+        self.assertEqual(inbox.type, UserNotification.Type.TASK_REMINDER)
+        self.assertFalse(inbox.is_read)
+        self.assertEqual(inbox.data.get("notification_id"), str(inbox.id))
+
+    def test_notifications_list_only_own(self):
+        """GET /notifications/ faqat joriy user notificationlarini qaytaradi."""
+        other = get_user_model().objects.create_user(
+            email="other@example.com",
+            password="StrongPassword123!",
+        )
+        mine = UserNotification.objects.create(
+            user=self.user,
+            type=UserNotification.Type.SYSTEM,
+            title="Mening",
+            body="ok",
+        )
+        UserNotification.objects.create(
+            user=other,
+            type=UserNotification.Type.SYSTEM,
+            title="Boshqa",
+            body="no",
+        )
+
+        response = self.client.get("/api/v1/notifications/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["unread_count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], mine.id)
+        self.assertEqual(response.data["results"][0]["title"], "Mening")
+
+        unread = self.client.get("/api/v1/notifications/unread-count/")
+        self.assertEqual(unread.status_code, 200)
+        self.assertEqual(unread.data["unread_count"], 1)
+
+        read = self.client.post(f"/api/v1/notifications/{mine.id}/read/")
+        self.assertEqual(read.status_code, 200)
+        self.assertTrue(read.data["is_read"])
+
+        unread2 = self.client.get("/api/v1/notifications/unread-count/")
+        self.assertEqual(unread2.data["unread_count"], 0)
+
+    def test_inbox_created_without_fcm_devices(self):
+        """Qurilma bo‘lmasa ham in-app notification yaratiladi."""
+        task = Task.objects.create(
+            user=self.user,
+            title="Inbox only",
+            reminder_at=timezone.now() - timedelta(seconds=1),
+        )
+        result = send_task_reminder(task)
+        self.assertEqual(result.get("inbox"), 1)
+        task.refresh_from_db()
+        self.assertIsNotNone(task.reminder_delivered_at)
+        self.assertEqual(
+            UserNotification.objects.filter(user=self.user, task=task).count(),
+            1,
+        )

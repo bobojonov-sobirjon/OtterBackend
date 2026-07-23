@@ -10,14 +10,15 @@ from firebase_admin import messaging
 
 from apps.accounts.utils import get_firebase_app
 
-from .models import FCMDevice, NotificationDelivery, Task
+from .models import FCMDevice, NotificationDelivery, Task, UserNotification
+
 
 logger = logging.getLogger(__name__)
 
 
-def _notification_data(task: Task) -> dict[str, str]:
+def _notification_data(task: Task, *, notification_id: int | None = None) -> dict[str, str]:
     """Формирует строковые data-поля для действий mobile notification."""
-    return {
+    payload = {
         "type": "task_reminder",
         "task_id": str(task.id),
         "complete_action": "complete",
@@ -25,16 +26,58 @@ def _notification_data(task: Task) -> dict[str, str]:
         "snooze_minutes": "10",
         "deeplink": f"otter://tasks/{task.id}",
     }
+    if notification_id is not None:
+        payload["notification_id"] = str(notification_id)
+    return payload
 
 
-def _message_for_device(task: Task, device: FCMDevice) -> messaging.Message:
+def create_task_reminder_inbox(task: Task) -> UserNotification:
+    """Создаёт или обновляет непрочитанное in-app уведомление по задаче."""
+    data = _notification_data(task)
+    existing = (
+        UserNotification.objects.filter(
+            user=task.user,
+            task=task,
+            type=UserNotification.Type.TASK_REMINDER,
+            is_read=False,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if existing:
+        existing.title = "Напоминание о задаче"
+        existing.body = task.title
+        existing.data = {**data, "notification_id": str(existing.id)}
+        existing.save(update_fields=["title", "body", "data"])
+        return existing
+
+    notification = UserNotification.objects.create(
+        user=task.user,
+        task=task,
+        type=UserNotification.Type.TASK_REMINDER,
+        title="Напоминание о задаче",
+        body=task.title,
+        data=data,
+        is_read=False,
+    )
+    notification.data = {**data, "notification_id": str(notification.id)}
+    notification.save(update_fields=["data"])
+    return notification
+
+
+def _message_for_device(
+    task: Task,
+    device: FCMDevice,
+    *,
+    notification_id: int | None = None,
+) -> messaging.Message:
     """Создаёт FCM message с high-priority и данными для lock-screen actions."""
     title = "Напоминание о задаче"
     body = task.title
     return messaging.Message(
         token=device.token,
         notification=messaging.Notification(title=title, body=body),
-        data=_notification_data(task),
+        data=_notification_data(task, notification_id=notification_id),
         android=messaging.AndroidConfig(
             priority="high",
             notification=messaging.AndroidNotification(
@@ -67,14 +110,18 @@ def _is_invalid_token_error(exc: Exception) -> bool:
 
 @transaction.atomic
 def send_task_reminder(task: Task) -> dict[str, int]:
-    """Отправляет напоминание на все активные устройства пользователя."""
+    """Отправляет напоминание: inbox + FCM на активные устройства."""
     task = Task.objects.select_for_update().get(pk=task.pk)
     if task.is_completed or not task.reminder_at or task.reminder_delivered_at:
         return {"sent": 0, "failed": 0, "skipped": 1}
 
+    inbox = create_task_reminder_inbox(task)
     devices = list(FCMDevice.objects.filter(user=task.user, is_active=True))
     if not devices:
-        return {"sent": 0, "failed": 0, "skipped": 1}
+        # In-app inbox still gets the notification even without FCM tokens.
+        task.reminder_delivered_at = timezone.now()
+        task.save(update_fields=["reminder_delivered_at", "updated_at"])
+        return {"sent": 0, "failed": 0, "skipped": 0, "inbox": 1}
 
     app = get_firebase_app()
     sent = 0
@@ -91,7 +138,10 @@ def send_task_reminder(task: Task) -> dict[str, int]:
 
         delivery.attempted_at = attempted_at
         try:
-            message_id = messaging.send(_message_for_device(task, device), app=app)
+            message_id = messaging.send(
+                _message_for_device(task, device, notification_id=inbox.id),
+                app=app,
+            )
             delivery.status = NotificationDelivery.Status.SENT
             delivery.message_id = message_id
             delivery.error = ""
@@ -111,16 +161,15 @@ def send_task_reminder(task: Task) -> dict[str, int]:
             failed += 1
         delivery.save()
 
-    # At least one successful push means this reminder was delivered.
-    if sent:
-        task.reminder_delivered_at = timezone.now()
-        task.save(update_fields=["reminder_delivered_at", "updated_at"])
+    # Delivered to inbox; mark reminder processed even if all FCM failed.
+    task.reminder_delivered_at = timezone.now()
+    task.save(update_fields=["reminder_delivered_at", "updated_at"])
 
-    return {"sent": sent, "failed": failed, "skipped": 0}
+    return {"sent": sent, "failed": failed, "skipped": 0, "inbox": 1}
 
 
 def dispatch_due_task_reminders(*, limit: int = 500) -> dict[str, int]:
-    """Находит просроченные reminder_at и отправляет FCM push."""
+    """Находит просроченные reminder_at и отправляет inbox + FCM push."""
     now = timezone.now()
     tasks = list(
         Task.objects.filter(
@@ -128,15 +177,14 @@ def dispatch_due_task_reminders(*, limit: int = 500) -> dict[str, int]:
             reminder_at__isnull=False,
             reminder_at__lte=now,
             reminder_delivered_at__isnull=True,
-            user__fcm_devices__is_active=True,
         )
-        .distinct()
         .order_by("reminder_at")[:limit]
     )
-    stats = {"tasks": len(tasks), "sent": 0, "failed": 0, "skipped": 0}
+    stats = {"tasks": len(tasks), "sent": 0, "failed": 0, "skipped": 0, "inbox": 0}
     for task in tasks:
         result = send_task_reminder(task)
         stats["sent"] += result["sent"]
         stats["failed"] += result["failed"]
         stats["skipped"] += result["skipped"]
+        stats["inbox"] += int(result.get("inbox") or 0)
     return stats

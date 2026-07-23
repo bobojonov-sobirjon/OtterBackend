@@ -138,12 +138,15 @@ DELETE /api/v1/devices/{id}/
 
 ### 4.2 FCM push
 
-Backend due tasklarni FCM HTTP v1 orqali yuboradi. Notification `data`:
+Backend due tasklarni FCM HTTP v1 orqali yuboradi **va** in-app inbox (`UserNotification`) yozuvini yaratadi.
+
+Notification `data`:
 
 ```json
 {
   "type": "task_reminder",
   "task_id": "123",
+  "notification_id": "15",
   "complete_action": "complete",
   "snooze_action": "snooze",
   "snooze_minutes": "10",
@@ -153,6 +156,20 @@ Backend due tasklarni FCM HTTP v1 orqali yuboradi. Notification `data`:
 
 Android notification channel: `task_reminders`.  
 iOS category: `OTTER_TASK_REMINDER`.
+
+### 4.2.1 In-app notifications (user inbox)
+
+```http
+GET    /api/v1/notifications/
+GET    /api/v1/notifications/?is_read=false
+GET    /api/v1/notifications/unread-count/
+POST   /api/v1/notifications/{id}/read/
+POST   /api/v1/notifications/read-all/
+GET    /api/v1/notifications/{id}/
+DELETE /api/v1/notifications/{id}/
+```
+
+Faqat `request.user` ga tegishli yozuvlar. Reminder dispatch paytida qurilma bo‘lmasa ham inbox yaratiladi.
 
 Serverda har daqiqada:
 
@@ -279,6 +296,7 @@ Guruhlash (`/tasks/grouped/`) va kalendar user timezone bilan hisoblanadi.
 - [ ] Attachments multipart upload
 - [ ] Calendar: `all_day_tasks` vs `timed_tasks`; undated emas
 - [ ] Login/token refresh dan keyin FCM tokenni `/devices/` ga yuborish
+- [ ] In-app inbox: `GET /notifications/` + unread badge
 - [ ] Android `task_reminders` channel yaratish
 - [ ] iOS `OTTER_TASK_REMINDER` category yaratish
 - [ ] Notification action: complete / snooze endpointlari

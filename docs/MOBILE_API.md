@@ -754,7 +754,7 @@ Refresh-токен недействителен или просрочен.
 
 > **Frontend (Pomodoro):** [POMODORO_BEGIN.md](./POMODORO_BEGIN.md) (быстрый старт) · [POMODORO_FRONTEND.md](./POMODORO_FRONTEND.md) (полный гайд)  
 > **Frontend (Premium / Robokassa):** [PAYMENT_FRONTEND.md](./PAYMENT_FRONTEND.md) (web/desktop) · [PAYMENT_MOBILE_SDK.md](./PAYMENT_MOBILE_SDK.md) (**mobile app + Robokassa SDK**)  
-> **Backlog backend updates (repeat, reminders, attachments, calendar):** [BACKLOG_BACKEND_API.md](./BACKLOG_BACKEND_API.md)
+> **Yangi API (frontend qo‘llanma):** [FRONTEND_NEW_API.md](./FRONTEND_NEW_API.md) · texnik: [BACKLOG_BACKEND_API.md](./BACKLOG_BACKEND_API.md)
 
 
 ---

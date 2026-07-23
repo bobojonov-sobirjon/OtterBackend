@@ -11,6 +11,7 @@ from .models import (
     PremiumFeatureFlag,
     Task,
     TaskAttachment,
+    UserNotification,
 )
 
 
@@ -78,6 +79,22 @@ class FCMDeviceAdmin(admin.ModelAdmin):
     list_filter = ("platform", "is_active")
     search_fields = ("user__email", "device_id", "name")
     readonly_fields = ("token", "created_at", "updated_at", "last_seen_at")
+
+
+@admin.register(UserNotification)
+class UserNotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "type",
+        "title",
+        "is_read",
+        "task",
+        "created_at",
+    )
+    list_filter = ("type", "is_read")
+    search_fields = ("user__email", "title", "body")
+    readonly_fields = ("created_at", "read_at")
 
 
 @admin.register(NotificationDelivery)

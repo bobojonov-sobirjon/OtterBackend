@@ -20,6 +20,11 @@ from .views import (
     SoundCatalogAPIView,
     SettingsStubActionAPIView,
     TaskViewSet,
+    UserNotificationDetailAPIView,
+    UserNotificationListAPIView,
+    UserNotificationReadAllAPIView,
+    UserNotificationReadAPIView,
+    UserNotificationUnreadCountAPIView,
 )
 
 router = DefaultRouter()
@@ -48,6 +53,31 @@ urlpatterns = [
         "devices/<int:device_id>/",
         FCMDeviceDetailAPIView.as_view(),
         name="fcm-device-detail",
+    ),
+    path(
+        "notifications/",
+        UserNotificationListAPIView.as_view(),
+        name="notifications-list",
+    ),
+    path(
+        "notifications/unread-count/",
+        UserNotificationUnreadCountAPIView.as_view(),
+        name="notifications-unread-count",
+    ),
+    path(
+        "notifications/read-all/",
+        UserNotificationReadAllAPIView.as_view(),
+        name="notifications-read-all",
+    ),
+    path(
+        "notifications/<int:notification_id>/",
+        UserNotificationDetailAPIView.as_view(),
+        name="notifications-detail",
+    ),
+    path(
+        "notifications/<int:notification_id>/read/",
+        UserNotificationReadAPIView.as_view(),
+        name="notifications-read",
     ),
     path("sounds/", SoundCatalogAPIView.as_view(), name="sound-catalog"),
     path("pomodoro/settings/", PomodoroSettingsAPIView.as_view(), name="pomodoro-settings"),

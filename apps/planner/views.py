@@ -6,6 +6,7 @@ from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,6 +21,7 @@ from .models import (
     MatrixBlockSetting,
     Task,
     TaskAttachment,
+    UserNotification,
 )
 from .serializers import (
     AppSettingsSerializer,
@@ -35,6 +37,7 @@ from .serializers import (
     SoundSerializer,
     TaskAttachmentSerializer,
     TaskSerializer,
+    UserNotificationSerializer,
     date_range_for_view,
     split_tasks_by_default_groups,
 )
@@ -613,6 +616,137 @@ class FCMDeviceDetailAPIView(APIView):
         device = get_object_or_404(FCMDevice, id=device_id, user=request.user)
         device.delete()
         return Response(status=204)
+
+
+class NotificationPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 100
+
+
+class UserNotificationListAPIView(APIView):
+    """In-app центр уведомлений: только уведомления текущего пользователя."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = NotificationPagination
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Список своих уведомлений",
+        description=(
+            "Возвращает только уведомления авторизованного пользователя. "
+            "Фильтр: `?is_read=true|false`. Пагинация: `limit` / `offset`."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="is_read",
+                type=str,
+                required=False,
+                description="true / false — фильтр по прочитанности",
+            ),
+            OpenApiParameter(name="limit", type=int, required=False),
+            OpenApiParameter(name="offset", type=int, required=False),
+        ],
+        responses={200: UserNotificationSerializer(many=True)},
+    )
+    def get(self, request):
+        qs = UserNotification.objects.filter(user=request.user)
+        is_read = request.query_params.get("is_read")
+        if is_read is not None:
+            value = is_read.strip().lower()
+            if value in {"1", "true", "yes"}:
+                qs = qs.filter(is_read=True)
+            elif value in {"0", "false", "no"}:
+                qs = qs.filter(is_read=False)
+            else:
+                return Response(
+                    {"is_read": ["Ожидается true или false."]},
+                    status=400,
+                )
+
+        unread_count = UserNotification.objects.filter(
+            user=request.user, is_read=False
+        ).count()
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        data = UserNotificationSerializer(page, many=True).data
+        response = paginator.get_paginated_response(data)
+        response.data["unread_count"] = unread_count
+        return response
+
+
+class UserNotificationUnreadCountAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Количество непрочитанных уведомлений",
+    )
+    def get(self, request):
+        count = UserNotification.objects.filter(
+            user=request.user, is_read=False
+        ).count()
+        return Response({"unread_count": count}, status=200)
+
+
+class UserNotificationReadAllAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Отметить все уведомления прочитанными",
+    )
+    def post(self, request):
+        now = timezone.now()
+        updated = UserNotification.objects.filter(
+            user=request.user, is_read=False
+        ).update(is_read=True, read_at=now)
+        return Response({"updated": updated, "unread_count": 0}, status=200)
+
+
+class UserNotificationDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Получить одно уведомление",
+        responses={200: UserNotificationSerializer},
+    )
+    def get(self, request, notification_id: int):
+        item = get_object_or_404(
+            UserNotification, id=notification_id, user=request.user
+        )
+        return Response(UserNotificationSerializer(item).data, status=200)
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Удалить уведомление",
+    )
+    def delete(self, request, notification_id: int):
+        item = get_object_or_404(
+            UserNotification, id=notification_id, user=request.user
+        )
+        item.delete()
+        return Response(status=204)
+
+
+class UserNotificationReadAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Уведомления"],
+        summary="Отметить уведомление прочитанным",
+        responses={200: UserNotificationSerializer},
+    )
+    def post(self, request, notification_id: int):
+        item = get_object_or_404(
+            UserNotification, id=notification_id, user=request.user
+        )
+        if not item.is_read:
+            item.is_read = True
+            item.read_at = timezone.now()
+            item.save(update_fields=["is_read", "read_at"])
+        return Response(UserNotificationSerializer(item).data, status=200)
+
 
 class AppSettingsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]

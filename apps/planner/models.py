@@ -263,6 +263,54 @@ class FCMDevice(models.Model):
         return f"{self.user_id}::{self.platform}::{self.device_id}"
 
 
+class UserNotification(models.Model):
+    """In-app уведомления пользователя (центр уведомлений)."""
+
+    class Type(models.TextChoices):
+        TASK_REMINDER = "task_reminder", "Напоминание о задаче"
+        SYSTEM = "system", "Системное"
+        PREMIUM = "premium", "Премиум"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="Пользователь",
+    )
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="user_notifications",
+        verbose_name="Задача",
+    )
+    type = models.CharField(
+        "Тип",
+        max_length=32,
+        choices=Type.choices,
+        default=Type.TASK_REMINDER,
+    )
+    title = models.CharField("Заголовок", max_length=255)
+    body = models.TextField("Текст", blank=True, default="")
+    data = models.JSONField("Данные", default=dict, blank=True)
+    is_read = models.BooleanField("Прочитано", default=False)
+    read_at = models.DateTimeField("Прочитано в", blank=True, null=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Уведомление пользователя"
+        verbose_name_plural = "3d. Уведомления пользователя"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["user", "is_read", "-created_at"]),
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}::{self.type}::{self.title}"
+
+
 class NotificationDelivery(models.Model):
     """История отправки push-напоминания на конкретное устройство."""
 
